@@ -1,0 +1,301 @@
+C51 COMPILER V9.60.7.0   IAP                                                               10/24/2026 00:10:13 PAGE 1   
+
+
+C51 COMPILER V9.60.7.0, COMPILATION OF MODULE IAP
+OBJECT MODULE PLACED IN ..\Objects\iap.obj
+COMPILER INVOKED BY: D:\IDE\Keil5\C51\BIN\C51.EXE ..\User\iap.c OPTIMIZE(8,SPEED) BROWSE DEFINE(D8_ALWAYS_ON=1) DEBUG OB
+                    -JECTEXTEND PRINT(..\Listings\iap.lst) OBJECT(..\Objects\iap.obj)
+
+line level    source
+
+   1          /**
+   2            ******************************************************************************
+   3            * @file    iap.c
+   4            * @brief   片内 EEPROM 持久化（STC89C52RC：2KB，起始 0x2000，512B 一个扇区）
+   5            *
+   6            * 存储策略 —— “日志式双扇区”，保证写入过程掉电时数据要么是完整旧值�
+             -��
+   7            * 要么是完整新值，绝不出现“半个密码”：
+   8            *
+   9            *   扇区 A = 0x2000~0x21FF，扇区 B = 0x2200~0x23FF，每个扇区 32 个 16 字节槽。
+  10            *   - 每次保存只在“当前扇区”的下一个空槽追加一条记录，不需要擦除；
+  11            *     写之前旧记录原封不动地留着，因此写到一半掉电不会破坏旧值。
+  12            *   - 当前扇区的 32 个槽写满后，才去擦除“另一个扇区”（里面只有更旧的副�
+             -��），
+  13            *     再把最新记录写进去并切换过去 —— 擦除瞬间丢失的也只是旧副本。
+  14            *   - 每条记录带序号 seq 与校验和 chk；上电扫描两个扇区，取序号最新的有效�
+             -�录。
+  15            *
+  16            * 时间：读 ~10us/字节，写 ~60us/字节，扇区擦除 ~10ms（擦除期间关总中断）。
+  17            ******************************************************************************
+  18            */
+  19          
+  20          #include "config.h"
+  21          #include "iap.h"
+  22          
+  23          /* ---------- ISP/IAP 特殊功能寄存器 ---------- */
+  24          sfr ISP_DATA  = 0xE2;
+  25          sfr ISP_ADDRH = 0xE3;
+  26          sfr ISP_ADDRL = 0xE4;
+  27          sfr ISP_CMD   = 0xE5;
+  28          sfr ISP_TRIG  = 0xE6;
+  29          sfr ISP_CONTR = 0xE7;
+  30          
+  31          #define IAP_CMD_IDLE    0x00
+  32          #define IAP_CMD_READ    0x01
+  33          #define IAP_CMD_WRITE   0x02
+  34          #define IAP_CMD_ERASE   0x03
+  35          #define IAP_CONTR_ON    0x81        /* ISPEN = 1, WT1:WT0 = 01 (<20MHz) */
+  36          
+  37          #define SEC_A           0x2000
+  38          #define SEC_B           0x2200
+  39          #define SLOT_MAX        32          /* 512 / 16 */
+  40          
+  41          static unsigned int  s_base;        /* 当前追加写入的扇区基址 */
+  42          static unsigned char s_slot;        /* 当前扇区下一个空槽 */
+  43          static unsigned char s_seq;         /* 已保存的最大序号 */
+  44          
+  45          /* 记录缓冲放片外 RAM：避免在函数里定义 16 字节结构体把 DATA 区撑爆 */
+  46          static PersistRec xdata rec_a;
+  47          static PersistRec xdata rec_b;
+  48          static PersistRec xdata rec_tmp;
+  49          
+  50          /* ------------------------------ 底层操作 ------------------------------ */
+  51          
+C51 COMPILER V9.60.7.0   IAP                                                               10/24/2026 00:10:13 PAGE 2   
+
+  52          static unsigned char iap_read(unsigned int addr)
+  53          {
+  54   1          unsigned char v;
+  55   1          bit ea = EA;
+  56   1      
+  57   1          EA = 0;                             /* 触发序列不可被打断 */
+  58   1          ISP_CONTR = IAP_CONTR_ON;
+  59   1          ISP_CMD   = IAP_CMD_READ;
+  60   1          ISP_ADDRH = (unsigned char)(addr >> 8);
+  61   1          ISP_ADDRL = (unsigned char)addr;
+  62   1          ISP_TRIG  = 0x46;
+  63   1          ISP_TRIG  = 0xB9;
+  64   1          v = ISP_DATA;
+  65   1          ISP_CONTR = 0x00;
+  66   1          ISP_CMD   = IAP_CMD_IDLE;
+  67   1          ISP_TRIG  = 0x00;
+  68   1          EA = ea;
+  69   1      
+  70   1          return v;
+  71   1      }
+  72          
+  73          static void iap_write(unsigned int addr, unsigned char dat)
+  74          {
+  75   1          bit ea = EA;
+  76   1      
+  77   1          EA = 0;
+  78   1          ISP_CONTR = IAP_CONTR_ON;
+  79   1          ISP_CMD   = IAP_CMD_WRITE;
+  80   1          ISP_ADDRH = (unsigned char)(addr >> 8);
+  81   1          ISP_ADDRL = (unsigned char)addr;
+  82   1          ISP_DATA  = dat;
+  83   1          ISP_TRIG  = 0x46;
+  84   1          ISP_TRIG  = 0xB9;
+  85   1          ISP_CONTR = 0x00;
+  86   1          ISP_CMD   = IAP_CMD_IDLE;
+  87   1          ISP_TRIG  = 0x00;
+  88   1          EA = ea;
+  89   1      }
+  90          
+  91          static void iap_erase(unsigned int addr)
+  92          {
+  93   1          bit ea = EA;
+  94   1      
+  95   1          EA = 0;                             /* 约 10ms，期间数码管由硬件保持 */
+  96   1          ISP_CONTR = IAP_CONTR_ON;
+  97   1          ISP_CMD   = IAP_CMD_ERASE;
+  98   1          ISP_ADDRH = (unsigned char)(addr >> 8);
+  99   1          ISP_ADDRL = (unsigned char)addr;
+ 100   1          ISP_TRIG  = 0x46;
+ 101   1          ISP_TRIG  = 0xB9;
+ 102   1          ISP_CONTR = 0x00;
+ 103   1          ISP_CMD   = IAP_CMD_IDLE;
+ 104   1          ISP_TRIG  = 0x00;
+ 105   1          EA = ea;
+ 106   1      }
+ 107          
+ 108          /* ------------------------------ 记录读写 ------------------------------ */
+ 109          
+ 110          static void rec_read(unsigned int addr, PersistRec *r)
+ 111          {
+ 112   1          unsigned char *p = (unsigned char *)r;
+ 113   1          unsigned char i;
+C51 COMPILER V9.60.7.0   IAP                                                               10/24/2026 00:10:13 PAGE 3   
+
+ 114   1      
+ 115   1          for (i = 0; i < REC_SIZE; i++) p[i] = iap_read(addr + i);
+ 116   1      }
+ 117          
+ 118          /* 写入并回读校验，返回 0 表示失败 */
+ 119          static unsigned char rec_write(unsigned int addr, const PersistRec *r)
+ 120          {
+ 121   1          const unsigned char *p = (const unsigned char *)r;
+ 122   1          unsigned char i;
+ 123   1      
+ 124   1          for (i = 0; i < REC_SIZE; i++)
+ 125   1          {
+ 126   2              if (p[i] != 0xFF) iap_write(addr + i, p[i]);   /* 0xFF 即空白，可省一次写 */
+ 127   2          }
+ 128   1          for (i = 0; i < REC_SIZE; i++)
+ 129   1          {
+ 130   2              if (iap_read(addr + i) != p[i]) return 0;
+ 131   2          }
+ 132   1          return 1;
+ 133   1      }
+ 134          
+ 135          static unsigned char rec_checksum(const PersistRec *r)
+ 136          {
+ 137   1          const unsigned char *p = (const unsigned char *)r;
+ 138   1          unsigned char i, s = 0x5A;
+ 139   1      
+ 140   1          for (i = 0; i < 12; i++) s = (unsigned char)(s + p[i]);
+ 141   1          return s;
+ 142   1      }
+ 143          
+ 144          static unsigned char rec_valid(const PersistRec *r)
+ 145          {
+ 146   1          unsigned char i;
+ 147   1      
+ 148   1          if (r->magic0 != REC_MAGIC0 || r->magic1 != REC_MAGIC1) return 0;
+ 149   1          if (r->ver != REC_VER) return 0;
+ 150   1          if (r->chk != rec_checksum(r)) return 0;
+ 151   1          if (r->err > ERR_LIMIT_PROTECT) return 0;
+ 152   1          if (r->stage > 2) return 0;
+ 153   1          for (i = 0; i < 6; i++)
+ 154   1          {
+ 155   2              if (r->pwd[i] > 9) return 0;
+ 156   2          }
+ 157   1          return 1;
+ 158   1      }
+ 159          
+ 160          /* 序号比较：环形，a 比 b 新返回 1 */
+ 161          static unsigned char seq_newer(unsigned char a, unsigned char b)
+ 162          {
+ 163   1          unsigned char d = (unsigned char)(a - b);
+ 164   1          return (unsigned char)((d != 0) && (d < 128));
+ 165   1      }
+ 166          
+ 167          /* 扫描一个扇区，返回已用槽数，同时给出该扇区内最新的一条有效记录 */
+ 168          static unsigned char scan_sector(unsigned int base, PersistRec *best,
+ 169                                           unsigned char *have)
+ 170          {
+ 171   1          unsigned char slot = 0;
+ 172   1      
+ 173   1          while (slot < SLOT_MAX)
+ 174   1          {
+ 175   2              rec_read(base + (unsigned int)slot * REC_SIZE, &rec_tmp);
+C51 COMPILER V9.60.7.0   IAP                                                               10/24/2026 00:10:13 PAGE 4   
+
+ 176   2              if (rec_tmp.magic0 == 0xFF) break;          /* 空白槽，后面都没写过 */
+ 177   2              if (!rec_valid(&rec_tmp)) break;            /* 半写记录，停止扫描 */
+ 178   2              if (!*have || seq_newer(rec_tmp.seq, best->seq))
+ 179   2              {
+ 180   3                  *best = rec_tmp;
+ 181   3                  *have = 1;
+ 182   3              }
+ 183   2              slot++;
+ 184   2          }
+ 185   1          return slot;
+ 186   1      }
+ 187          
+ 188          /* ------------------------------ 对外接口 ------------------------------ */
+ 189          
+ 190          unsigned char Iap_Load(PersistRec *out)
+ 191          {
+ 192   1          unsigned char have_a = 0, have_b = 0;
+ 193   1          unsigned char cnt_a, cnt_b;
+ 194   1      
+ 195   1          cnt_a = scan_sector(SEC_A, &rec_a, &have_a);
+ 196   1          cnt_b = scan_sector(SEC_B, &rec_b, &have_b);
+ 197   1      
+ 198   1          if (!have_a && !have_b)
+ 199   1          {
+ 200   2              s_base = SEC_A;                         /* 首次上电：从 A 扇区槽 0 开始 */
+ 201   2              s_slot = 0;
+ 202   2              s_seq  = 0;
+ 203   2              return 0;
+ 204   2          }
+ 205   1      
+ 206   1          if (have_a && (!have_b || !seq_newer(rec_b.seq, rec_a.seq)))
+ 207   1          {
+ 208   2              *out   = rec_a;
+ 209   2              s_base = SEC_A;
+ 210   2              s_slot = cnt_a;
+ 211   2          }
+ 212   1          else
+ 213   1          {
+ 214   2              *out   = rec_b;
+ 215   2              s_base = SEC_B;
+ 216   2              s_slot = cnt_b;
+ 217   2          }
+ 218   1          s_seq = out->seq;
+ 219   1          return 1;
+ 220   1      }
+ 221          
+ 222          unsigned char Iap_Save(PersistRec *rec)
+ 223          {
+ 224   1          unsigned int addr;
+ 225   1          unsigned int other;
+ 226   1      
+ 227   1          rec->magic0 = REC_MAGIC0;
+ 228   1          rec->magic1 = REC_MAGIC1;
+ 229   1          rec->ver    = REC_VER;
+ 230   1          rec->seq    = (unsigned char)(s_seq + 1);
+ 231   1          rec->res[0] = 0xFF;
+ 232   1          rec->res[1] = 0xFF;
+ 233   1          rec->res[2] = 0xFF;
+ 234   1          rec->chk    = rec_checksum(rec);
+ 235   1      
+ 236   1          if (s_slot >= SLOT_MAX)
+ 237   1          {
+C51 COMPILER V9.60.7.0   IAP                                                               10/24/2026 00:10:13 PAGE 5   
+
+ 238   2              /* 当前扇区写满：擦掉另一个（更旧的）扇区，把最新记录搬过去 */
+ 239   2              other = (s_base == SEC_A) ? SEC_B : SEC_A;
+ 240   2              iap_erase(other);
+ 241   2              if (!rec_write(other, rec)) return 0;
+ 242   2              s_base = other;
+ 243   2              s_slot = 1;
+ 244   2              s_seq  = rec->seq;
+ 245   2              return 1;
+ 246   2          }
+ 247   1      
+ 248   1          addr = s_base + (unsigned int)s_slot * REC_SIZE;
+ 249   1          if (!rec_write(addr, rec)) return 0;
+ 250   1      
+ 251   1          s_slot++;
+ 252   1          s_seq = rec->seq;
+ 253   1          return 1;
+ 254   1      }
+ 255          
+ 256          /**
+ 257            * @brief  软复位并从 ISP 引导区启动（不断电升级）
+ 258            * @note   ISP_CONTR = 0x60 ：SWBS=1（从 ISP 程序区启动）+ SWRST=1（软件复位）
+ 259            */
+ 260          void Iap_SoftResetToIsp(void)
+ 261          {
+ 262   1          ISP_CONTR = 0x60;
+ 263   1          while (1) { }
+ 264   1      }
+ 265          
+ 266          /******************************* END OF FILE *********************************/
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    951    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     48    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =      4      39
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----       3
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

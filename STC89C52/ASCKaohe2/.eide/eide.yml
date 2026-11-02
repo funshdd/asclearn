@@ -1,0 +1,86 @@
+version: "4.1"
+name: asckaohe2
+type: C51
+deviceName: null
+packDir: null
+srcDirs: []
+virtualFolder:
+  name: <virtual_root>
+  files: []
+  folders:
+    - name: Source Group 1
+      files:
+        - path: main.c
+      folders:
+        - name: Headers
+          files:
+            - path: Delay.c
+            - path: Delay.h
+            - path: EEPROM.c
+            - path: EEPROM.h
+            - path: IIC.c
+            - path: IIC.h
+            - path: Key.c
+            - path: Key.h
+            - path: Nixie.c
+            - path: Nixie.h
+            - path: Tick.c
+            - path: Tick.h
+            - path: Event.c
+            - path: Event.h
+            - path: Password.c
+            - path: Password.h
+            - path: Feedback.c
+            - path: Feedback.h
+          folders:
+            - name: States
+              files:
+                - path: States.c
+                - path: States.h
+              folders: []
+            - name: Uart
+              files:
+                - path: UartStringAsm.c
+                - path: UartStringAsm.h
+                - path: Uart.h
+                - path: Uart.c
+              folders: []
+dependenceList: []
+outDir: build
+miscInfo:
+  uid: 25ae1bef239ce4333bf3b12e7b2c4d26
+targets:
+  Target_1:
+    cppPreprocessAttrs:
+      defineList: []
+      incList:
+        - ../../../../IDE/Keil5/C51/INC/STC
+      libList: []
+    excludeList:
+      - <virtual_root>/Source Group 1/Headers/Beep.c
+    settings:
+      debugger: unknown
+    toolchain: Keil_C51
+    toolchainConfigMap:
+      Keil_C51:
+        options:
+          version: 2
+          afterBuildTasks: []
+          asm-compiler: {}
+          beforeBuildTasks: []
+          c/cpp-compiler:
+            optimization-level: level-8
+            optimization-type: SPEED
+          global:
+            ram-mode: SMALL
+            rom-mode: LARGE
+          linker:
+            misc-controls: ""
+            output-format: elf
+            remove-unused: true
+    uploadConfigMap:
+      Custom:
+        bin: ""
+        commandLine: ""
+        eraseChipCommand: ""
+    uploader: Custom

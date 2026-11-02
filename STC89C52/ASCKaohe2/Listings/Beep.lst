@@ -1,0 +1,64 @@
+C51 COMPILER V9.60.7.0   BEEP                                                              10/24/2026 00:12:45 PAGE 1   
+
+
+C51 COMPILER V9.60.7.0, COMPILATION OF MODULE BEEP
+OBJECT MODULE PLACED IN .\Objects\Beep.obj
+COMPILER INVOKED BY: D:\IDE\Keil5\C51\BIN\C51.EXE Beep.c OPTIMIZE(8,SPEED) BROWSE DEBUG OBJECTEXTEND PRINT(.\Listings\Be
+                    -ep.lst) OBJECT(.\Objects\Beep.obj)
+
+line level    source
+
+   1          #include "Beep.h"
+   2          
+   3          static volatile unsigned char beep_left  = 0;
+   4          static volatile unsigned char beep_level = 1;
+   5          
+   6          void Beep_Init(void)
+   7          {
+   8   1              beep_level = 1;
+   9   1              beep_left  = 0;
+  10   1              BEEP       = 1;
+  11   1      }
+  12          
+  13          void Beep_On(unsigned char ms)
+  14          {
+  15   1              beep_left = ms;
+  16   1      }
+  17          
+  18          void Beep_Tick1ms(void)
+  19          {
+  20   1              if (beep_left)
+  21   1              {
+  22   2      #if BEEP_ACTIVE
+                              beep_level = 1;
+              #else
+  25   2                      beep_level ^= 1;
+  26   2      #endif
+  27   2                      BEEP = beep_level;
+  28   2      
+  29   2                      if (--beep_left == 0)
+  30   2                      {
+  31   3                              beep_level = 1;
+  32   3                              BEEP = 1;
+  33   3                      }
+  34   2              }
+  35   1      }
+  36          
+  37          void Beep_Restore(void)
+  38          {
+  39   1              BEEP = beep_level;
+  40   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =     41    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =      2    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

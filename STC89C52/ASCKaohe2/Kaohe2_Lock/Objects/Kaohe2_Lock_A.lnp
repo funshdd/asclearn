@@ -1,0 +1,10 @@
+"..\Objects\main.obj",
+"..\Objects\board.obj",
+"..\Objects\timer.obj",
+"..\Objects\uart.obj",
+"..\Objects\nixie.obj",
+"..\Objects\key.obj",
+"..\Objects\iap.obj",
+"..\Objects\lock.obj" 
+TO "..\Objects\Kaohe2_Lock_A" 
+PRINT("..\Listings\Kaohe2_Lock_A.m51") RAMSIZE(256) 

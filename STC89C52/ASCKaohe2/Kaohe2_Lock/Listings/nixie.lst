@@ -1,0 +1,86 @@
+C51 COMPILER V9.60.7.0   NIXIE                                                             10/24/2026 00:10:13 PAGE 1   
+
+
+C51 COMPILER V9.60.7.0, COMPILATION OF MODULE NIXIE
+OBJECT MODULE PLACED IN ..\Objects\nixie.obj
+COMPILER INVOKED BY: D:\IDE\Keil5\C51\BIN\C51.EXE ..\User\nixie.c OPTIMIZE(8,SPEED) BROWSE DEFINE(D8_ALWAYS_ON=1) DEBUG 
+                    -OBJECTEXTEND PRINT(..\Listings\nixie.lst) OBJECT(..\Objects\nixie.obj)
+
+line level    source
+
+   1          /**
+   2            ******************************************************************************
+   3            * @file    nixie.c
+   4            * @brief   8 位共阴极数码管动态扫描
+   5            *
+   6            * 位选由 74HC138 完成（P2.2/P2.3/P2.4），段码走 P0。扫描放在 1ms 节拍里，
+   7            * 每位点亮 1ms、8 位一循环（125Hz），并且换位前先熄灭段码以消影。
+   8            * 全流程没有阻塞延时，主循环随时可以写显示缓存。
+   9            ******************************************************************************
+  10            */
+  11          
+  12          #include "config.h"
+  13          #include "nixie.h"
+  14          
+  15          /* 0~9 段码表放在 code 区，不占用宝贵的 128 字节 data 空间 */
+  16          const unsigned char code SEG_DIGIT[10] =
+  17          {
+  18              SEG_0, SEG_1, SEG_2, SEG_3, SEG_4, SEG_5, SEG_6, SEG_7, SEG_8, SEG_9
+  19          };
+  20          
+  21          static volatile unsigned char nix_buf[8];   /* 8 位显示缓存 */
+  22          static unsigned char nix_pos = 0;           /* 当前扫描位 */
+  23          
+  24          /**
+  25            * @brief  1ms 中断调用：换到下一位并输出段码
+  26            * @note   先消影再换位，避免数码管出现重影
+  27            */
+  28          void Nixie_Tick(void)
+  29          {
+  30   1          unsigned char v;
+  31   1      
+  32   1          SEG_PORT = SEG_BLANK;                   /* 消影 */
+  33   1      
+  34   1          /* 位序 1~8 对应的 138 编码：位 1 => CBA=111，位 8 => CBA=000 */
+  35   1          v = (unsigned char)(7 - nix_pos);
+  36   1          NIX_A = (v & 0x01);
+  37   1          NIX_B = (v & 0x02);
+  38   1          NIX_C = (v & 0x04);
+  39   1      
+  40   1          SEG_PORT = nix_buf[nix_pos];            /* 送段码 */
+  41   1      
+  42   1          if (++nix_pos >= 8) nix_pos = 0;
+  43   1      }
+  44          
+  45          /**
+  46            * @brief  提交显示缓存（左起第 1 位到第 8 位）
+  47            * @param  seg8: 8 字节段码
+  48            * @note   关中断拷贝，避免扫描到一半时读到新旧混合的内容
+  49            */
+  50          void Nixie_Commit(const unsigned char *seg8)
+  51          {
+  52   1          unsigned char i;
+  53   1          bit ea = EA;
+  54   1      
+C51 COMPILER V9.60.7.0   NIXIE                                                             10/24/2026 00:10:13 PAGE 2   
+
+  55   1          EA = 0;
+  56   1          for (i = 0; i < 8; i++) nix_buf[i] = seg8[i];
+  57   1          EA = ea;
+  58   1      }
+  59          
+  60          /******************************* END OF FILE *********************************/
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =     86    ----
+   CONSTANT SIZE    =     10    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =      9       3
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----       1
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

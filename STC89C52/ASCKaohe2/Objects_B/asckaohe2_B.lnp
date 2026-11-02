@@ -1,0 +1,15 @@
+".\Objects_B\main.obj",
+".\Objects_B\Nixie.obj",
+".\Objects_B\Uart.obj",
+".\Objects_B\Delay.obj",
+".\Objects_B\IIC.obj",
+".\Objects_B\EEPROM.obj",
+".\Objects_B\Tick.obj",
+".\Objects_B\Key.obj",
+".\Objects_B\Event.obj",
+".\Objects_B\Password.obj",
+".\Objects_B\States.obj",
+".\Objects_B\UartStringAsm.obj",
+".\Objects_B\Feedback.obj" 
+TO ".\Objects_B\asckaohe2_B" 
+PRINT(".\Listings_B\asckaohe2_B.m51") RAMSIZE(256) 

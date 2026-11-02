@@ -1,0 +1,118 @@
+C51 COMPILER V9.60.7.0   MAIN                                                              09/27/2026 01:03:29 PAGE 1   
+
+
+C51 COMPILER V9.60.7.0, COMPILATION OF MODULE MAIN
+OBJECT MODULE PLACED IN .\Objects\main.obj
+COMPILER INVOKED BY: D:\IDE\Keil5\C51\BIN\C51.EXE main.c OPTIMIZE(8,SPEED) BROWSE DEBUG OBJECTEXTEND PRINT(.\Listings\ma
+                    -in.lst) OBJECT(.\Objects\main.obj)
+
+line level    source
+
+   1          //#include <REGX52.H>
+   2          #include <89c52.h>
+   3          
+   4          // 100hz T=10ms
+   5          
+   6          unsigned int ratio = 50;
+   7          
+   8          sbit P2_0 = P2^0;
+   9          sbit P1_0 = P1^0;
+  10          sbit P1_1 = P1^1;
+  11          
+  12          void Timer0Init(void)
+  13          {
+  14   1              AUXR &= 0x7F;           
+  15   1              TMOD &= 0xF0;
+  16   1              TMOD |= 0x01;
+  17   1              TL0 = 0x9C+1;
+  18   1              TH0 = 0xFF;     
+  19   1              TF0 = 0;        
+  20   1              TR0 = 1;
+  21   1              
+  22   1              ET0 = 1; //interr piority
+  23   1              EA = 1;
+  24   1              PT0 = 0;
+  25   1      }
+  26          
+  27          
+  28          void TimerInit()
+  29          {
+  30   1              //TCON = 0x01;//timer mode control
+  31   1              
+  32   1              TMOD = TMOD&0x0F;
+  33   1              TMOD = TMOD|0x01;
+  34   1              
+  35   1              TF0 = 0;//timer overflow
+  36   1              TR0 = 1;//timer ready
+  37   1                      
+  38   1              //0.1ms
+  39   1              TH0 = 0xFF+1;//timer counter high
+  40   1              TL0 = 0x9C+1;//timer counter low
+  41   1              
+  42   1              ET0 = 1; //interr piority
+  43   1              EA = 1;
+  44   1              PT0 = 0;
+  45   1      }
+  46          
+  47          unsigned int timer_count = 0;
+  48          int isH = 0;
+  49          
+  50          //0.1ms
+  51          void Timer0_Routine() interrupt 1
+  52          {
+  53   1              TH0 = 0xFF;//timer counter high
+  54   1              TL0 = 0x9C+1;//timer counter low
+C51 COMPILER V9.60.7.0   MAIN                                                              09/27/2026 01:03:29 PAGE 2   
+
+  55   1              
+  56   1              timer_count++;
+  57   1              
+  58   1              if(timer_count > ratio)
+  59   1              {
+  60   2                      P2_0 = 0;
+  61   2              }
+  62   1              else
+  63   1              {
+  64   2                      P2_0 = 1;
+  65   2              }
+  66   1              
+  67   1              if(timer_count>=100)
+  68   1              {
+  69   2                      timer_count  = 0;
+  70   2              }
+  71   1      }
+  72          
+  73          void main()
+  74          {
+  75   1              Timer0Init();
+  76   1              
+  77   1              while(1)
+  78   1              {
+  79   2                      if(P1_0==0)
+  80   2                      {
+  81   3                              while(P1_0==0);
+  82   3                              if(ratio>=10)
+  83   3                                      ratio-=5;
+  84   3                      }
+  85   2                      if(P1_1==0)
+  86   2                      {
+  87   3                              while(P1_1==0);
+  88   3                              if(ratio<=90)
+  89   3                                      ratio+=5;
+  90   3                      }
+  91   2              }
+  92   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    166    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =      6    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

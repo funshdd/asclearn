@@ -1,0 +1,61 @@
+version: "4.1"
+name: asc
+type: C51
+deviceName: null
+packDir: null
+srcDirs: []
+virtualFolder:
+  name: <virtual_root>
+  files: []
+  folders:
+    - name: Source Group 1
+      files:
+        - path: main.c
+        - path: Delay.h
+        - path: Nixie.h
+        - path: Button.h
+        - path: Timer.h
+        - path: Ledmatrix.h
+        - path: LCD.h
+        - path: LCD.c
+        - path: Calc.h
+        - path: Uart.h
+      folders: []
+dependenceList: []
+outDir: build
+miscInfo:
+  uid: ca1c857872cb67eb44f2756eb3836c1e
+targets:
+  Target_1:
+    cppPreprocessAttrs:
+      defineList: []
+      incList:
+        - ../../../../IDE/Keil5/C51/INC/STC
+      libList: []
+    excludeList: []
+    settings:
+      debugger: unknown
+    toolchain: Keil_C51
+    toolchainConfigMap:
+      Keil_C51:
+        options:
+          version: 2
+          afterBuildTasks: []
+          asm-compiler: {}
+          beforeBuildTasks: []
+          c/cpp-compiler:
+            optimization-level: level-8
+            optimization-type: SPEED
+          global:
+            ram-mode: SMALL
+            rom-mode: LARGE
+          linker:
+            misc-controls: ""
+            output-format: elf
+            remove-unused: true
+    uploadConfigMap:
+      Custom:
+        bin: ""
+        commandLine: ""
+        eraseChipCommand: ""
+    uploader: Custom

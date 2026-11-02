@@ -1,0 +1,264 @@
+C51 COMPILER V9.60.7.0   LCD                                                               10/16/2026 05:06:01 PAGE 1   
+
+
+C51 COMPILER V9.60.7.0, COMPILATION OF MODULE LCD
+OBJECT MODULE PLACED IN .\Objects\LCD.obj
+COMPILER INVOKED BY: D:\IDE\Keil5\C51\BIN\C51.EXE LCD.c OPTIMIZE(8,SPEED) BROWSE DEBUG OBJECTEXTEND PRINT(.\Listings\LCD
+                    -.lst) OBJECT(.\Objects\LCD.obj)
+
+line level    source
+
+   1          /**
+   2            ******************************************************************************
+   3            * @file       bsp_lcd.c
+   4            * @author     embedfire
+   5            * @version     V1.0
+   6            * @date        2025
+   7            * @brief      16*2点阵的LCD显示屏驱动函数接口
+   8            ******************************************************************************
+   9            * @attention
+  10            *
+  11            * 实验平台  ：野火 STC89C52RC 开发板 
+  12            * 论坛      ：http://www.firebbs.cn
+  13            * 官网      ：https://embedfire.com/
+  14            * 淘宝      ：https://yehuosm.tmall.com/
+  15            *
+  16            ******************************************************************************
+  17            */
+  18            
+  19          #include "LCD.h"
+  20          
+  21          /**
+  22            * @brief  LCD延时函数
+  23            * @param  无
+  24            * @note   用于LCD时序延时控制
+  25            * @retval 无
+  26            */
+  27          void LCD_Delay(void)
+  28          {
+  29   1              //Delay20us(1);
+  30   1              unsigned char data i;
+  31   1      
+  32   1              _nop_();
+  33   1              i = 6;
+  34   1              while (--i);
+  35   1      }
+  36          void Delay1ms(unsigned int number)      //@11.0592MHz
+  37          {
+  38   1              unsigned char data i, j;
+  39   1      
+  40   1              while(number--)
+  41   1              {
+  42   2              _nop_();
+  43   2              i = 2;
+  44   2              j = 199;
+  45   2              do
+  46   2              {
+  47   3                      while (--j);
+  48   3              } while (--i);
+  49   2       }
+  50   1      }
+  51          
+  52          /**
+  53            * @brief  检测LCD忙状态
+  54            * @param  无
+C51 COMPILER V9.60.7.0   LCD                                                               10/16/2026 05:06:01 PAGE 2   
+
+  55            * @note   RS=0 RW=1读取忙标志D7
+  56            * @retval busy 1表示忙，0表示空闲
+  57            */
+  58          bit LCD_CheckBusy(void)
+  59          {
+  60   1              bit data busy = 1;
+  61   1              LCD_RS = 0;          // 指令寄存器选择
+  62   1              LCD_RW = 1;          // 读模式
+  63   1              LCD_EN = 1;          // 使能LCD
+  64   1              LCD_Delay();         // 延时等待数据稳定
+  65   1              busy = LCD_DATA_PORT & 0x80;  // 读取忙标志位D7
+  66   1              LCD_EN = 0;          // 关闭使能
+  67   1              return busy;
+  68   1      }
+  69          
+  70          /**
+  71            * @brief  写LCD指令
+  72            * @param  command 指令字节
+  73            * @note   写入前需等待LCD空闲
+  74            * @retval 无
+  75            */
+  76          void LCD_WriteInstruction(unsigned char command)
+  77          {
+  78   1              while(LCD_CheckBusy());   // 等待LCD空闲
+  79   1              LCD_RS = 0;               // 选择指令寄存器
+  80   1              LCD_RW = 0;               // 写模式
+  81   1              LCD_DATA_PORT = command;  // 写入指令
+  82   1              LCD_EN = 1;               // 使能写入
+  83   1              LCD_Delay();              // 保持数据
+  84   1              LCD_EN = 0;               // 锁存数据
+  85   1              LCD_Delay();              // 延时稳定
+  86   1      }
+  87          
+  88          /**
+  89            * @brief  写LCD数据
+  90            * @param  byte 数据字节
+  91            * @note   写入显示数据到当前地址
+  92            * @retval 无
+  93            */
+  94          void LCD_WriteData(unsigned char byte)
+  95          {
+  96   1              while(LCD_CheckBusy());   // 等待LCD空闲
+  97   1              LCD_RS = 1;               // 选择数据寄存器
+  98   1              LCD_RW = 0;               // 写模式
+  99   1              LCD_DATA_PORT = byte;     // 写入数据
+ 100   1              LCD_EN = 1;               // 使能写入
+ 101   1              LCD_Delay();              // 保持数据
+ 102   1              LCD_EN = 0;               // 锁存数据
+ 103   1              LCD_Delay();              // 延时稳定
+ 104   1      }
+ 105          
+ 106          /**
+ 107            * @brief  设置LCD显示坐标
+ 108            * @param  y 行（1或2）
+ 109            * @param  x 列（1~16）
+ 110            * @note   根据行列计算DDRAM地址
+ 111            * @retval 无
+ 112            */
+ 113          void LCD_SetPos(unsigned char y, unsigned char x)
+ 114          {
+ 115   1              if(y == 1)
+ 116   1                      LCD_WriteInstruction(0x80 | (x-1));
+C51 COMPILER V9.60.7.0   LCD                                                               10/16/2026 05:06:01 PAGE 3   
+
+ 117   1              else
+ 118   1                      LCD_WriteInstruction(0x80 | (x-1 + 0x40));
+ 119   1      }
+ 120          
+ 121          /**
+ 122            * @brief  LCD初始化函数
+ 123            * @param  无
+ 124            * @note   初始化为8位模式，显示开，光标关闭
+ 125            * @retval 无
+ 126            */
+ 127          void LCD_Init(void)
+ 128          {
+ 129   1              LCD_WriteInstruction(0x38);  // 8位数据，2行显示，5x7点阵
+ 130   1              Delay1ms(5);
+ 131   1              LCD_WriteInstruction(0x38);  // 重复初始化
+ 132   1              Delay1ms(5);
+ 133   1              LCD_WriteInstruction(0x38);  // 稳定设置
+ 134   1      
+ 135   1              LCD_WriteInstruction(0x0c);  // 显示开，光标关
+ 136   1              LCD_WriteInstruction(0x06);  // 写入后地址自动加1
+ 137   1              LCD_WriteInstruction(0x01);  // 清屏
+ 138   1              Delay1ms(5);
+ 139   1      }
+ 140          
+ 141          /**
+ 142            * @brief  LCD显示单个字符
+ 143            * @param  y 行
+ 144            * @param  x 列
+ 145            * @param  char_data 显示字符
+ 146            * @note   在指定位置显示一个字符
+ 147            * @retval 无
+ 148            */
+ 149          void LCD_ShowChar(unsigned char y, unsigned char x, char char_data)
+ 150          {
+ 151   1              LCD_SetPos(y,x);              // 设置显示位置
+ 152   1              LCD_WriteData(char_data);     // 写入字符
+ 153   1      }
+ 154          
+ 155          /**
+ 156            * @brief  LCD显示字符串
+ 157            * @param  y 行
+ 158            * @param  x 列
+ 159            * @param  string_data 字符串指针
+ 160            * @note   从指定位置连续显示字符串
+ 161            * @retval 无
+ 162            */
+ 163          void LCD_ShowString(unsigned char y, unsigned char x, char *string_data)
+ 164          {
+ 165   1              unsigned char data i = 0;
+ 166   1              LCD_SetPos(y,x);   // 设置起始位置
+ 167   1      
+ 168   1              for(i = 0; *string_data != '\0'; i++)
+ 169   1              {
+ 170   2                      LCD_WriteData(*string_data++);   // 逐字符显示
+ 171   2              }
+ 172   1      }
+ 173          
+ 174          /**
+ 175            * @brief  LCD显示整数
+ 176            * @param  y 行（1或2）
+ 177            * @param  x 列（1~16）
+ 178            * @param  number 要显示的整数（支持负数）
+C51 COMPILER V9.60.7.0   LCD                                                               10/16/2026 05:06:01 PAGE 4   
+
+ 179            * @note   从指定位置开始显示，自动处理符号和0
+ 180            * @retval 无
+ 181            */
+ 182          void LCD_DisplayNumber(unsigned char y, unsigned char x, int number)
+ 183          {
+ 184   1              unsigned char data buf[8];       // 缓冲区，最大 -32768 共 6 位 + 符号
+ 185   1              unsigned char data i = 0;
+ 186   1              unsigned char data j = 0;
+ 187   1              unsigned char data isNeg = 0;
+ 188   1              unsigned int  data absNum;
+ 189   1      
+ 190   1              /* 处理负数 */
+ 191   1              if (number < 0)
+ 192   1              {
+ 193   2                      isNeg = 1;
+ 194   2                      absNum = (unsigned int)(-number);   // 取绝对值
+ 195   2              }
+ 196   1              else
+ 197   1              {
+ 198   2                      absNum = (unsigned int)number;
+ 199   2              }
+ 200   1      
+ 201   1              /* 处理 0 的情况 */
+ 202   1              if (absNum == 0)
+ 203   1              {
+ 204   2                      buf[i++] = '0';
+ 205   2              }
+ 206   1              else
+ 207   1              {
+ 208   2                      /* 从低位到高位取出每一位，存入缓冲区 */
+ 209   2                      while (absNum > 0)
+ 210   2                      {
+ 211   3                              buf[i++] = (absNum % 10) + '0';
+ 212   3                              absNum /= 10;
+ 213   3                      }
+ 214   2              }
+ 215   1      
+ 216   1              /* 设置显示位置 */
+ 217   1              LCD_SetPos(y, x);
+ 218   1      
+ 219   1              /* 先显示负号 */
+ 220   1              if (isNeg)
+ 221   1              {
+ 222   2                      LCD_WriteData('-');
+ 223   2              }
+ 224   1      
+ 225   1              /* 逆序输出（因为刚才存的是低位在前） */
+ 226   1              for (j = i; j > 0; j--)
+ 227   1              {
+ 228   2                      LCD_WriteData(buf[j - 1]);
+ 229   2              }
+ 230   1      }
+ 231          
+ 232          /*****************************END OF FILE***************************************/
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    346    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----      16
+C51 COMPILER V9.60.7.0   LCD                                                               10/16/2026 05:06:01 PAGE 5   
+
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----       1
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

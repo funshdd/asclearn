@@ -1,0 +1,193 @@
+C51 COMPILER V9.60.7.0   EEPROM                                                            10/24/2026 21:07:31 PAGE 1   
+
+
+C51 COMPILER V9.60.7.0, COMPILATION OF MODULE EEPROM
+OBJECT MODULE PLACED IN .\Objects_B\EEPROM.obj
+COMPILER INVOKED BY: D:\IDE\Keil5\C51\BIN\C51.EXE EEPROM.c OPTIMIZE(8,SPEED) BROWSE DEFINE(D8_ALWAYS_ON=1) DEBUG OBJECTE
+                    -XTEND PRINT(.\Listings_B\EEPROM.lst) OBJECT(.\Objects_B\EEPROM.obj)
+
+line level    source
+
+   1          #include "EEPROM.h"
+   2          #include "Delay.h"
+   3          
+   4          #define ROM_WRITE_WAIT_US   600
+   5          #define ROM_STATE_SIZE      16
+   6          
+   7          static void ROM_WriteWait(void)
+   8          {
+   9   1              unsigned int i;
+  10   1      
+  11   1              for (i = 0; i < ROM_WRITE_WAIT_US; i++)
+  12   1              {
+  13   2                      Delay10us();
+  14   2              }
+  15   1      }
+  16          
+  17          bit ROM_WriteByte(unsigned char addr, unsigned char byte)
+  18          {
+  19   1              IIC_Start();
+  20   1              IIC_SendByte(ROM_SLAVER_ADDR_WRITE);
+  21   1              if(IIC_WaitAck())
+  22   1              {
+  23   2                      IIC_Stop();
+  24   2                      return 1;
+  25   2              }
+  26   1      
+  27   1              IIC_SendByte(addr);
+  28   1              if(IIC_WaitAck())
+  29   1              {
+  30   2                      IIC_Stop();
+  31   2                      return 1;
+  32   2              }
+  33   1      
+  34   1              IIC_SendByte(byte);
+  35   1              IIC_Stop();
+  36   1      
+  37   1              return 0;
+  38   1      }
+  39          
+  40          bit ROM_WritePage(unsigned char addr, unsigned char *buffer, unsigned char num)
+  41          {
+  42   1              IIC_Start();
+  43   1              IIC_SendByte(ROM_SLAVER_ADDR_WRITE);
+  44   1              if(IIC_WaitAck())
+  45   1              {
+  46   2                      IIC_Stop();
+  47   2                      return 1;
+  48   2              }
+  49   1      
+  50   1              IIC_SendByte(addr);
+  51   1              if(IIC_WaitAck())
+  52   1              {
+  53   2                      IIC_Stop();
+  54   2                      return 1;
+C51 COMPILER V9.60.7.0   EEPROM                                                            10/24/2026 21:07:31 PAGE 2   
+
+  55   2              }
+  56   1      
+  57   1              while(num != 0)
+  58   1              {
+  59   2                      IIC_SendByte(*buffer);
+  60   2                      if(IIC_WaitAck())
+  61   2                      {
+  62   3                              IIC_Stop();
+  63   3                              return 1;
+  64   3                      }
+  65   2                      buffer++;
+  66   2                      num--;
+  67   2              }
+  68   1      
+  69   1              IIC_Stop();
+  70   1              return 0;
+  71   1      }
+  72          
+  73          bit ROM_Read(unsigned char addr, unsigned char *recv_data, unsigned char num)
+  74          {
+  75   1              IIC_Start();
+  76   1              IIC_SendByte(ROM_SLAVER_ADDR_WRITE);
+  77   1              if(IIC_WaitAck())
+  78   1              {
+  79   2                      IIC_Stop();
+  80   2                      return 1;
+  81   2              }
+  82   1      
+  83   1              IIC_SendByte(addr);
+  84   1              if(IIC_WaitAck())
+  85   1              {
+  86   2                      IIC_Stop();
+  87   2                      return 1;
+  88   2              }
+  89   1      
+  90   1              IIC_Start();
+  91   1              IIC_SendByte(ROM_SLAVER_ADDR_READ);
+  92   1              if(IIC_WaitAck())
+  93   1              {
+  94   2                      IIC_Stop();
+  95   2                      return 1;
+  96   2              }
+  97   1      
+  98   1              while(num > 1)
+  99   1              {
+ 100   2                      *recv_data = IIC_ReadByte();
+ 101   2                      IIC_SendAck(IIC_ACK);
+ 102   2                      recv_data++;
+ 103   2                      num--;
+ 104   2              }
+ 105   1              *recv_data = IIC_ReadByte();
+ 106   1              IIC_SendAck(IIC_NACK);
+ 107   1              IIC_Stop();
+ 108   1      
+ 109   1              return 0;
+ 110   1      }
+ 111          
+ 112          bit Rom_SaveState(unsigned char *pwd, unsigned char err, unsigned char stage)
+ 113          {
+ 114   1              unsigned char data buf[ROM_STATE_SIZE];
+ 115   1              unsigned char i;
+ 116   1              unsigned char sum = 0;
+C51 COMPILER V9.60.7.0   EEPROM                                                            10/24/2026 21:07:31 PAGE 3   
+
+ 117   1      
+ 118   1              for (i = 0; i < ROM_STATE_SIZE; i++) buf[i] = 0xFF;
+ 119   1      
+ 120   1              buf[0] = ROM_STATE_MAGIC1;
+ 121   1              for (i = 0; i < 6; i++) buf[1 + i] = pwd[i];
+ 122   1              buf[7] = (unsigned char)((stage << 4) | (err & 0x0F));
+ 123   1      
+ 124   1              sum = 0;
+ 125   1              for (i = 0; i < 8; i++) sum = (unsigned char)(sum + buf[i]);
+ 126   1      
+ 127   1              buf[8] = ROM_STATE_MAGIC2;
+ 128   1              buf[9] = sum;
+ 129   1      
+ 130   1              if (ROM_WritePage(ROM_STATE_ADDR, buf, 8)) return 1;
+ 131   1              ROM_WriteWait();
+ 132   1              if (ROM_WritePage(ROM_STATE_ADDR + 8, &buf[8], 8)) return 1;
+ 133   1              ROM_WriteWait();
+ 134   1      
+ 135   1              return 0;
+ 136   1      }
+ 137          
+ 138          bit Rom_LoadState(unsigned char *pwd, unsigned char *err, unsigned char *stage)
+ 139          {
+ 140   1              unsigned char data buf[ROM_STATE_SIZE];
+ 141   1              unsigned char i;
+ 142   1              unsigned char sum = 0;
+ 143   1              unsigned char e, s;
+ 144   1      
+ 145   1              if (ROM_Read(ROM_STATE_ADDR, buf, ROM_STATE_SIZE)) return 1;
+ 146   1              if (buf[0] != ROM_STATE_MAGIC1) return 1;
+ 147   1              if (buf[8] != ROM_STATE_MAGIC2) return 1;
+ 148   1      
+ 149   1              for (i = 0; i < 8; i++) sum = (unsigned char)(sum + buf[i]);
+ 150   1              if (buf[9] != sum) return 1;
+ 151   1      
+ 152   1              for (i = 0; i < 6; i++)
+ 153   1              {
+ 154   2                      if (buf[1 + i] > 9) return 1;
+ 155   2              }
+ 156   1              e = (unsigned char)(buf[7] & 0x0F);
+ 157   1              s = (unsigned char)(buf[7] >> 4);
+ 158   1              if (e > 5 || s > 2) return 1;
+ 159   1      
+ 160   1              for (i = 0; i < 6; i++) pwd[i] = buf[1 + i];
+ 161   1              *err   = e;
+ 162   1              *stage = s;
+ 163   1      
+ 164   1              return 0;
+ 165   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    541    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----      61
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

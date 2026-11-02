@@ -1,0 +1,217 @@
+========================================================================
+  密码锁串口自测清单（v1）
+  --------------------------------------------------------------
+  用法：每行一条命令，按 LF 结尾发送；看到回复后再发下一条
+        （标了【连发】的除外）。把回复原样贴回来即可。
+  串口：9600 8N1，无流控
+  格式：编号 | 发送 | 期望回复（题面标准）
+========================================================================
+
+------------------------------------------------------------------
+[准备] 让板子回到干净初态
+------------------------------------------------------------------
+P1 | STATUS
+   期望 OK LOCKED 0 0 0 0
+   说明 若 E（第 4 个数字）不是 0，先用正确密码解锁一次把错误次数清零：
+        DIGIT 0 / DIGIT 1 / DIGIT 2 / DIGIT 3 / DIGIT 4 / DIGIT 5 / OK / LOCK
+
+------------------------------------------------------------------
+[P01] 基础输入与解锁
+------------------------------------------------------------------
+ 1 | DIGIT 0        | OK LOCKED 1 0 0 0
+ 2 | DIGIT 1        | OK LOCKED 2 0 0 0
+ 3 | DIGIT 2        | OK LOCKED 3 0 0 0
+ 4 | OK             | ERR INCOMPLETE LOCKED 3 0 0 0     （不足六位：保留输入、不计错）
+ 5 | STATUS         | OK LOCKED 3 0 0 0
+ 6 | DEL            | OK LOCKED 2 0 0 0                 （删末位）
+ 7 | CLEAR          | OK LOCKED 0 0 0 0
+ 8 | DEL            | OK LOCKED 0 0 0 0                 （空删除：成功、不报错）
+ 9 | CLEAR          | OK LOCKED 0 0 0 0                 （空清空：成功）
+10 | OK             | ERR INCOMPLETE LOCKED 0 0 0 0
+11 | DIGIT 0        | OK LOCKED 1 0 0 0
+12 | DIGIT 1        | OK LOCKED 2 0 0 0
+13 | DIGIT 2        | OK LOCKED 3 0 0 0
+14 | DIGIT 3        | OK LOCKED 4 0 0 0
+15 | DIGIT 4        | OK LOCKED 5 0 0 0
+16 | DIGIT 5        | OK LOCKED 6 0 0 0
+17 | DIGIT 9        | ERR FULL LOCKED 6 0 0 0           （已满：不覆盖、不追加）
+18 | DIGIT 0        | ERR FULL LOCKED 6 0 0 0
+19 | OK             | OK UNLOCKED 0 0 0 15              （正确密码：清空输入、错误清零）
+20 | STATUS         | OK UNLOCKED 0 0 0 15              （倒计时，允许 14）
+21 | DIGIT 1        | ERR DENIED UNLOCKED 0 0 0 15      （解锁态禁止输入）
+22 | OK             | ERR DENIED UNLOCKED 0 0 0 15      （解锁态禁止确认）
+23 | DEL            | ERR DENIED UNLOCKED 0 0 0 15
+24 | CLEAR          | ERR DENIED UNLOCKED 0 0 0 15
+25 | LOCK           | OK LOCKED 0 0 0 0
+
+------------------------------------------------------------------
+[P02] 组合操作一致性（键盘 ↔ 串口交替）
+------------------------------------------------------------------
+26 | DIGIT 0        | OK LOCKED 1 0 0 0
+   说明 此处用键盘按 1、2、3 三下，再回串口
+27 | STATUS         | OK LOCKED 4 0 0 0                 （1 位串口 + 3 位键盘 = 4）
+28 | CLEAR          | OK LOCKED 0 0 0 0
+29 | CHANGE         | ERR DENIED LOCKED 0 0 0 0         （锁定态禁止改密）
+30 | DIGIT 7        | OK LOCKED 1 0 0 0
+31 | CANCEL         | OK LOCKED 1 0 0 0                 （锁定态取消：原态、输入保留）
+32 | LOCK           | OK LOCKED 1 0 0 0                 （锁定态上锁：OK）
+33 | CLEAR          | OK LOCKED 0 0 0 0
+
+------------------------------------------------------------------
+[P04] 双次改密与校验
+------------------------------------------------------------------
+34 | DIGIT 0        | OK LOCKED 1 0 0 0
+35 | DIGIT 1        | OK LOCKED 2 0 0 0
+36 | DIGIT 2        | OK LOCKED 3 0 0 0
+37 | DIGIT 3        | OK LOCKED 4 0 0 0
+38 | DIGIT 4        | OK LOCKED 5 0 0 0
+39 | DIGIT 5        | OK LOCKED 6 0 0 0
+40 | OK             | OK UNLOCKED 0 0 0 15
+41 | CHANGE         | OK NEW1 0 0 0 15
+42 | DIGIT 6        | OK NEW1 1 0 0 15
+43 | DIGIT 5        | OK NEW1 2 0 0 15
+44 | DIGIT 4        | OK NEW1 3 0 0 15
+45 | DIGIT 3        | OK NEW1 4 0 0 15
+46 | DIGIT 2        | OK NEW1 5 0 0 15
+47 | DIGIT 1        | OK NEW1 6 0 0 15
+48 | OK             | OK NEW2 0 0 0 15
+49 | DIGIT 6        | OK NEW2 1 0 0 15
+50 | DIGIT 5        | OK NEW2 2 0 0 15
+51 | DIGIT 4        | OK NEW2 3 0 0 15
+52 | DIGIT 3        | OK NEW2 4 0 0 15
+53 | DIGIT 2        | OK NEW2 5 0 0 15
+54 | DIGIT 0        | OK NEW2 6 0 0 15
+55 | OK             | ERR MISMATCH UNLOCKED 0 0 0 15   （两次不一致：丢弃、回解锁）
+56 | LOCK           | OK LOCKED 0 0 0 0
+57 | DIGIT 0        | OK LOCKED 1 0 0 0
+58 | DIGIT 1        | OK LOCKED 2 0 0 0
+59 | DIGIT 2        | OK LOCKED 3 0 0 0
+60 | DIGIT 3        | OK LOCKED 4 0 0 0
+61 | DIGIT 4        | OK LOCKED 5 0 0 0
+62 | DIGIT 5        | OK LOCKED 6 0 0 0
+63 | OK             | OK UNLOCKED 0 0 0 15              （旧密码仍然有效）
+64 | CHANGE         | OK NEW1 0 0 0 15
+65 | DIGIT 0        | OK NEW1 1 0 0 15
+66 | DIGIT 0        | OK NEW1 2 0 0 15
+67 | DIGIT 0        | OK NEW1 3 0 0 15
+68 | DIGIT 1        | OK NEW1 4 0 0 15
+69 | DIGIT 2        | OK NEW1 5 0 0 15
+70 | DIGIT 3        | OK NEW1 6 0 0 15
+71 | OK             | OK NEW2 0 0 0 15
+72 | DIGIT 0        | OK NEW2 1 0 0 15
+73 | DIGIT 0        | OK NEW2 2 0 0 15
+74 | DIGIT 0        | OK NEW2 3 0 0 15
+75 | DIGIT 1        | OK NEW2 4 0 0 15
+76 | DIGIT 2        | OK NEW2 5 0 0 15
+77 | DIGIT 3        | OK NEW2 6 0 0 15
+78 | OK             | OK UNLOCKED 0 0 0 15              （新密码 000123 保存成功）
+79 | LOCK           | OK LOCKED 0 0 0 0
+80 | DIGIT 0        | OK LOCKED 1 0 0 0
+81 | DIGIT 0        | OK LOCKED 2 0 0 0
+82 | DIGIT 0        | OK LOCKED 3 0 0 0
+83 | DIGIT 1        | OK LOCKED 4 0 0 0
+84 | DIGIT 2        | OK LOCKED 5 0 0 0
+85 | DIGIT 3        | OK LOCKED 6 0 0 0
+86 | OK             | OK UNLOCKED 0 0 0 15              （前导零新密码生效）
+87 | CHANGE         | OK NEW1 0 0 0 15
+88 | DIGIT 0        | OK NEW1 1 0 0 15
+89 | DIGIT 1        | OK NEW1 2 0 0 15
+90 | DIGIT 2        | OK NEW1 3 0 0 15
+91 | DIGIT 3        | OK NEW1 4 0 0 15
+92 | DIGIT 4        | OK NEW1 5 0 0 15
+93 | DIGIT 5        | OK NEW1 6 0 0 15
+94 | OK             | OK NEW2 0 0 0 15
+95 | DIGIT 0        | OK NEW2 1 0 0 15
+96 | DIGIT 1        | OK NEW2 2 0 0 15
+97 | DIGIT 2        | OK NEW2 3 0 0 15
+98 | DIGIT 3        | OK NEW2 4 0 0 15
+99 | DIGIT 4        | OK NEW2 5 0 0 15
+100| DIGIT 5        | OK NEW2 6 0 0 15
+101| OK             | OK UNLOCKED 0 0 0 15              （改回默认 012345）
+102| LOCK           | OK LOCKED 0 0 0 0
+
+------------------------------------------------------------------
+[P06] 错误计数与保护
+------------------------------------------------------------------
+103| DIGIT 9        | OK LOCKED 1 0 0 0
+104| DIGIT 9        | OK LOCKED 2 0 0 0
+105| DIGIT 9        | OK LOCKED 3 0 0 0
+106| DIGIT 9        | OK LOCKED 4 0 0 0
+107| DIGIT 9        | OK LOCKED 5 0 0 0
+108| DIGIT 9        | OK LOCKED 6 0 0 0
+109| OK             | ERR WRONG LOCKED 0 1 0 0          （第 1 次错）
+110| DIGIT 9 ... 9（6 次）+ OK | ERR WRONG LOCKED 0 2 0 0   （第 2 次错）
+111| DIGIT 9 ... 9（6 次）+ OK | ERR WRONG WAIT 0 3 30 0    （第 3 次错 → 暂停 30 秒）
+112| DIGIT 1        | ERR DENIED WAIT 0 3 30 0
+113| LOCK           | OK WAIT 0 3 30 0                  （上锁不解除限制、不重计时）
+114| STATUS         | OK WAIT 0 3 2x 0                  （剩余秒数，等几秒后应递减）
+   说明 等 31 秒不要发任何命令
+115| STATUS         | OK LOCKED 0 3 0 0                 （到期回锁定、错误次数保留 3）
+116| DIGIT 9 ... 9（6 次）+ OK | ERR WRONG LOCKED 0 4 0 0   （第 4 次错：仍锁定）
+117| DIGIT 9 ... 9（6 次）+ OK | ERR WRONG PROTECT 0 5 60 0 （第 5 次错 → 保护 60 秒）
+118| OK             | ERR DENIED PROTECT 0 5 60 0
+119| LOCK           | OK PROTECT 0 5 60 0
+   说明 等 61 秒不要发任何命令
+120| STATUS         | OK LOCKED 0 0 0 0                 （到期清零）
+
+------------------------------------------------------------------
+[P05] 15 秒自动上锁
+------------------------------------------------------------------
+121| 解锁（012345）  | OK UNLOCKED 0 0 0 15
+   说明 什么都不发，等 16 秒
+122| STATUS         | OK LOCKED 0 0 0 0
+123| 解锁（012345）  | OK UNLOCKED 0 0 0 15
+124| CHANGE         | OK NEW1 0 0 0 15
+   说明 什么都不发，等 16 秒（改密过程中也要超时）
+125| STATUS         | OK LOCKED 0 0 0 0
+126| 解锁 → CHANGE → 输 3 位 → 等 12 秒 → 再输 3 位 → OK
+   期望 OK NEW2 0 0 0 15                （有效操作要刷新计时）
+
+------------------------------------------------------------------
+[P03] 串口协议健壮性
+------------------------------------------------------------------
+127| FOO            | ERR BAD_CMD LOCKED 0 0 0 0
+128| digit 0        | ERR BAD_CMD LOCKED 0 0 0 0        （小写非法）
+129| 1              | ERR BAD_CMD LOCKED 0 0 0 0        （裸数字非法）
+130| DIGIT  1       | ERR BAD_CMD LOCKED 0 0 0 0        （双空格非法）
+131| DIGIT          | ERR BAD_CMD LOCKED 0 0 0 0
+132| DIGIT 10       | ERR BAD_CMD LOCKED 0 0 0 0
+133| DEL 1          | ERR BAD_CMD LOCKED 0 0 0 0
+134| DIGIT 00000000000 | ERR BAD_CMD LOCKED 0 0 0 0     （17 字节超长行：整行丢弃）
+135| STATUS         | OK LOCKED 0 0 0 0                 （超长行后仍正常）
+136| VERSION        | OK VERSION 1.0
+137| STAT           | ERR BAD_CMD LOCKED 0 0 0 0        （前缀不匹配）
+138| STATUS（用 CRLF 结尾） | OK LOCKED 0 0 0 0 一条（不能回两条）
+139| 只发 LF（空行） | ERR BAD_CMD LOCKED 0 0 0 0 一条
+140| 【连发】DIGIT 1~6 六条不停顿 | 应收到 6 条 OK LOCKED 1..6，不得出现 BAD_CMD
+
+------------------------------------------------------------------
+[P07] 不断电升级（当前预期失败，先记录现象）
+------------------------------------------------------------------
+141| 解锁（012345）  | OK UNLOCKED 0 0 0 15
+142| ISP            | OK ISP                            （题面要求；当前会回 ERR DENIED）
+
+------------------------------------------------------------------
+[断电保留] 这条需要真实拔电
+------------------------------------------------------------------
+143| 制造 3 次错误进 WAIT，然后拔电、重新上电
+144| STATUS         | OK WAIT 0 3 30 0                  （阶段保留、重新等满 30 秒）
+145| 改密成 000123 后拔电重上电，用 000123 解锁 | OK UNLOCKED ...
+
+========================================================================
+【我预判你当前版本会对不上的地方】（回显贴回来后我按这个核对）
+
+A. 第 19/20/40 条：回复的 T 值大概率是 16 而不是 15
+   因为解锁处赋的是 unlock_counter = 16000，而回复里的 T 是
+   State_AutoSec() = unlock_counter / 1000，此刻正好是 16。
+   题面示例 4 是 OK UNLOCKED 0 0 0 15 → 这一条会被判错。
+   同理第 111 条会是 ERR WRONG WAIT 0 3 31 0（题面是 30），
+   第 117 条是 ERR WRONG PROTECT 0 5 61 0（题面是 60）。
+
+B. 第 142 条：ISP 目前固定回 ERR DENIED（功能未实现）。
+
+C. 第 139 条：单独发 LF 时，如果前一字节是终止符会被折叠掉，
+   可能在「无回复」和「回 BAD_CMD」之间表现不稳定。
+
+D. 第 143/145 条：需要真实拔电，我会按「重启后完整等待」的口径核对。
+========================================================================

@@ -1,0 +1,153 @@
+C51 COMPILER V9.60.7.0   UART                                                              10/24/2026 21:07:31 PAGE 1   
+
+
+C51 COMPILER V9.60.7.0, COMPILATION OF MODULE UART
+OBJECT MODULE PLACED IN .\Objects_B\Uart.obj
+COMPILER INVOKED BY: D:\IDE\Keil5\C51\BIN\C51.EXE Uart.c OPTIMIZE(8,SPEED) BROWSE DEFINE(D8_ALWAYS_ON=1) DEBUG OBJECTEXT
+                    -END PRINT(.\Listings_B\Uart.lst) OBJECT(.\Objects_B\Uart.obj)
+
+line level    source
+
+   1          #include "Uart.h"
+   2          
+   3          #define UART_RX_SIZE 128
+   4          #define UART_TX_SIZE 64
+   5          
+   6          static volatile unsigned char xdata rx_buf[UART_RX_SIZE];
+   7          static volatile unsigned char rx_head = 0;
+   8          static volatile unsigned char rx_tail = 0;
+   9          
+  10          static volatile unsigned char xdata tx_buf[UART_TX_SIZE];
+  11          static volatile unsigned char tx_head = 0;
+  12          static volatile unsigned char tx_tail = 0;
+  13          static volatile bit tx_busy = 0;
+  14          
+  15          void Send_Byte(unsigned char ch)
+  16          {
+  17   1              unsigned char nh;
+  18   1              unsigned char c;
+  19   1      
+  20   1              nh = (unsigned char)((tx_head + 1) & (UART_TX_SIZE - 1));
+  21   1      
+  22   1              while(nh == tx_tail)
+  23   1              {
+  24   2                      nh = (unsigned char)((tx_head + 1) & (UART_TX_SIZE - 1));
+  25   2              }
+  26   1      
+  27   1              tx_buf[tx_head] = ch;
+  28   1              tx_head = nh;
+  29   1      
+  30   1              if(!tx_busy)
+  31   1              {
+  32   2                      tx_busy = 1;
+  33   2                      c = tx_buf[tx_tail];
+  34   2                      tx_tail = (unsigned char)((tx_tail + 1) & (UART_TX_SIZE - 1));
+  35   2                      SBUF = c;
+  36   2              }
+  37   1      }
+  38          
+  39          void Send_String(unsigned char *str)
+  40          {
+  41   1              while(*str != '\0')
+  42   1              {
+  43   2                      Send_Byte(*str);
+  44   2                      str++;
+  45   2              }
+  46   1      }
+  47          
+  48          unsigned char Uart_GetByte(unsigned char *ch)
+  49          {
+  50   1              if(rx_tail == rx_head)
+  51   1              {
+  52   2                      return 0;
+  53   2              }
+  54   1      
+C51 COMPILER V9.60.7.0   UART                                                              10/24/2026 21:07:31 PAGE 2   
+
+  55   1              *ch = rx_buf[rx_tail];
+  56   1              rx_tail = (unsigned char)((rx_tail + 1) & (UART_RX_SIZE - 1));
+  57   1      
+  58   1              return 1;
+  59   1      }
+  60          
+  61          unsigned char Uart_TxIdle(void)
+  62          {
+  63   1              if(tx_busy)
+  64   1              {
+  65   2                      return 0;
+  66   2              }
+  67   1      
+  68   1              if(tx_head != tx_tail)
+  69   1              {
+  70   2                      return 0;
+  71   2              }
+  72   1      
+  73   1              return 1;
+  74   1      }
+  75          
+  76          void Uart_Init()
+  77          {
+  78   1              PCON &= 0x7F;
+  79   1              SCON = 0x50;
+  80   1      
+  81   1              TMOD &= 0x0F;
+  82   1              TMOD |= 0x20;
+  83   1      
+  84   1              TH1 = 0xFD;
+  85   1              TL1 = TH1;
+  86   1      
+  87   1              ET1 = 0;
+  88   1              TR1 = 1;
+  89   1      
+  90   1              ES = 1;
+  91   1              EA = 1;
+  92   1      }
+  93          
+  94          void Uart_Interrupt() interrupt 4
+  95          {
+  96   1              unsigned char c;
+  97   1              unsigned char nh;
+  98   1      
+  99   1              if(RI)
+ 100   1              {
+ 101   2                      RI = 0;
+ 102   2                      c = SBUF;
+ 103   2                      nh = (unsigned char)((rx_head + 1) & (UART_RX_SIZE - 1));
+ 104   2                      if(nh != rx_tail)
+ 105   2                      {
+ 106   3                              rx_buf[rx_head] = c;
+ 107   3                              rx_head = nh;
+ 108   3                      }
+ 109   2              }
+ 110   1      
+ 111   1              if(TI)
+ 112   1              {
+ 113   2                      TI = 0;
+ 114   2      
+ 115   2                      if(tx_tail != tx_head)
+ 116   2                      {
+C51 COMPILER V9.60.7.0   UART                                                              10/24/2026 21:07:31 PAGE 3   
+
+ 117   3                              SBUF = tx_buf[tx_tail];
+ 118   3                              tx_tail = (unsigned char)((tx_tail + 1) & (UART_TX_SIZE - 1));
+ 119   3                      }
+ 120   2                      else
+ 121   2                      {
+ 122   3                              tx_busy = 0;
+ 123   3                      }
+ 124   2              }
+ 125   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    259    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =    192    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =      4    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =      1    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

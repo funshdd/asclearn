@@ -1,0 +1,136 @@
+C51 COMPILER V9.60.7.0   IIC                                                               10/24/2026 21:07:31 PAGE 1   
+
+
+C51 COMPILER V9.60.7.0, COMPILATION OF MODULE IIC
+OBJECT MODULE PLACED IN .\Objects_B\IIC.obj
+COMPILER INVOKED BY: D:\IDE\Keil5\C51\BIN\C51.EXE IIC.c OPTIMIZE(8,SPEED) BROWSE DEFINE(D8_ALWAYS_ON=1) DEBUG OBJECTEXTE
+                    -ND PRINT(.\Listings_B\IIC.lst) OBJECT(.\Objects_B\IIC.obj)
+
+line level    source
+
+   1          #include "IIC.h"
+   2          #include "Delay.h"
+   3          
+   4          sbit IIC_SCL = P3^4;
+   5          sbit IIC_SDA = P3^5;
+   6          
+   7          static void IIC_Delay(void)
+   8          {
+   9   1              Delay10us();
+  10   1      }
+  11          
+  12          void IIC_Start()
+  13          {
+  14   1              IIC_SDA = 1;
+  15   1              IIC_Delay();
+  16   1              IIC_SCL = 1;
+  17   1              IIC_Delay();
+  18   1              IIC_SDA = 0;
+  19   1              IIC_Delay();
+  20   1              IIC_SCL = 0;
+  21   1              IIC_Delay();
+  22   1      }
+  23          
+  24          void IIC_Stop()
+  25          {
+  26   1              IIC_SDA = 0;
+  27   1              IIC_Delay();
+  28   1              IIC_SCL = 1;
+  29   1              IIC_Delay();
+  30   1              IIC_SDA = 1;
+  31   1              IIC_Delay();
+  32   1      }
+  33          
+  34          bit IIC_WaitAck()
+  35          {
+  36   1              bit nack;
+  37   1      
+  38   1              IIC_SDA = 1;
+  39   1              IIC_Delay();
+  40   1      
+  41   1              IIC_SCL = 1;
+  42   1              IIC_Delay();
+  43   1      
+  44   1              nack = (IIC_SDA == 1) ? 1 : 0;
+  45   1      
+  46   1              IIC_SCL = 0;
+  47   1              IIC_Delay();
+  48   1      
+  49   1              return nack;
+  50   1      }
+  51          
+  52          void IIC_SendByte(unsigned char byte)
+  53          {
+  54   1              unsigned char data i = 0;
+C51 COMPILER V9.60.7.0   IIC                                                               10/24/2026 21:07:31 PAGE 2   
+
+  55   1      
+  56   1              for(i=0;i<8;i++)
+  57   1              {
+  58   2                      IIC_SDA = ((byte & (0x80 >> i)) ? 1 : 0);
+  59   2                      IIC_Delay();
+  60   2      
+  61   2                      IIC_SCL = 1;
+  62   2                      IIC_Delay();
+  63   2      
+  64   2                      IIC_SCL = 0;
+  65   2                      IIC_Delay();
+  66   2              }
+  67   1      }
+  68          
+  69          unsigned char IIC_ReadByte()
+  70          {
+  71   1              unsigned char data i = 0;
+  72   1              unsigned char data read_data = 0;
+  73   1      
+  74   1              IIC_SDA = 1;
+  75   1              IIC_Delay();
+  76   1      
+  77   1              for(i=0;i<8;i++)
+  78   1              {
+  79   2                      IIC_SCL = 1;
+  80   2                      IIC_Delay();
+  81   2      
+  82   2                      read_data = (unsigned char)(read_data << 1);
+  83   2                      if(IIC_SDA)
+  84   2                      {
+  85   3                              read_data |= 0x01;
+  86   3                      }
+  87   2      
+  88   2                      IIC_SCL = 0;
+  89   2                      IIC_Delay();
+  90   2              }
+  91   1      
+  92   1              return read_data;
+  93   1      }
+  94          
+  95          void IIC_SendAck(unsigned char ack)
+  96          {
+  97   1              IIC_SDA = ack;
+  98   1              IIC_Delay();
+  99   1      
+ 100   1              IIC_SCL = 1;
+ 101   1              IIC_Delay();
+ 102   1      
+ 103   1              IIC_SCL = 0;
+ 104   1              IIC_Delay();
+ 105   1      
+ 106   1              IIC_SDA = 1;
+ 107   1              IIC_Delay();
+ 108   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    194    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----       4
+C51 COMPILER V9.60.7.0   IIC                                                               10/24/2026 21:07:31 PAGE 3   
+
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----       1
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

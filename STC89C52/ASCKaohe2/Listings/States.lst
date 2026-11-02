@@ -1,0 +1,690 @@
+C51 COMPILER V9.60.7.0   STATES                                                            10/24/2026 21:07:29 PAGE 1   
+
+
+C51 COMPILER V9.60.7.0, COMPILATION OF MODULE STATES
+OBJECT MODULE PLACED IN .\Objects\States.obj
+COMPILER INVOKED BY: D:\IDE\Keil5\C51\BIN\C51.EXE States.c OPTIMIZE(8,SPEED) BROWSE DEFINE(D8_ALWAYS_ON=0) DEBUG OBJECTE
+                    -XTEND PRINT(.\Listings\States.lst) OBJECT(.\Objects\States.obj)
+
+line level    source
+
+   1          #include "States.h"
+   2          #include "Event.h"
+   3          #include "Password.h"
+   4          #include "EEPROM.h"
+   5          #include "Feedback.h"
+   6          
+   7          #define INPUT_START 2
+   8          #define INPUT_END   8
+   9          
+  10          static unsigned int unlock_counter = 15000;
+  11          static unsigned int wait30_counter = 30000;
+  12          static unsigned int wait60_counter = 60000;
+  13          static unsigned char new_password[PASSWORD_LEN] = {0, 0, 0, 0, 0, 0};
+  14          static bit save_pending = 0;
+  15          static unsigned int isp_counter = 0;
+  16          
+  17          unsigned char state_result = R_OK;
+  18          
+  19          static void save_state(void)
+  20          {
+  21   1              unsigned char st;
+  22   1      
+  23   1              if (State_GetTop() == S_WAIT30)      st = 1;
+  24   1              else if (State_GetTop() == S_WAIT60) st = 2;
+  25   1              else                                 st = 0;
+  26   1      
+  27   1              if(Rom_SaveState(password, err, st) != 0)
+  28   1              {
+  29   2                      Rom_SaveState(password, err, st);
+  30   2              }
+  31   1      }
+  32          
+  33          static void show_head(unsigned char sc)
+  34          {
+  35   1              nixie_buffer[0] = sc;
+  36   1              nixie_buffer[1] = err;
+  37   1      }
+  38          
+  39          static void show_wait_sec(unsigned int ms)
+  40          {
+  41   1              unsigned int sec = (ms + 999) / 1000;
+  42   1      
+  43   1              nixie_buffer[2] = NIXIE_DASH;
+  44   1              nixie_buffer[3] = NIXIE_DASH;
+  45   1              nixie_buffer[4] = NIXIE_DASH;
+  46   1              nixie_buffer[5] = NIXIE_DASH;
+  47   1              nixie_buffer[6] = (unsigned char)(sec / 10);
+  48   1              nixie_buffer[7] = (unsigned char)(sec % 10);
+  49   1      }
+  50          
+  51          void Locked_State_Event(char event)
+  52          {
+  53   1              unsigned char i;
+  54   1              bit ok;
+C51 COMPILER V9.60.7.0   STATES                                                            10/24/2026 21:07:29 PAGE 2   
+
+  55   1      
+  56   1          if(event<=9&&event>=0)
+  57   1          {
+  58   2              if (input_pos < INPUT_END)
+  59   2              {
+  60   3                  nixie_buffer[input_pos] = (unsigned char)event;
+  61   3                  input_pos++;
+  62   3              }
+  63   2              else
+  64   2              {
+  65   3                  state_result = R_FULL;
+  66   3              }
+  67   2              return;
+  68   2          }
+  69   1      
+  70   1          switch (event)
+  71   1          {
+  72   2              case E_DELETE:
+  73   2                  if (input_pos > INPUT_START)
+  74   2                  {
+  75   3                      input_pos--;
+  76   3                      nixie_buffer[input_pos] = NIXIE_DASH;
+  77   3                      unlock_counter = 15000;
+  78   3                  }
+  79   2                  break;
+  80   2              case E_CLEAR:
+  81   2                  if (input_pos > INPUT_START)
+  82   2                  {
+  83   3                      unlock_counter = 15000;
+  84   3                  }
+  85   2                              Nixie_Clear();
+  86   2                  break;
+  87   2              case E_MOD:
+  88   2                  state_result = R_DENIED;
+  89   2                  break;
+  90   2              case E_LOCK:
+  91   2                              Nixie_Clear();
+  92   2                  break;
+  93   2              case E_OK:
+  94   2                  if (input_pos < INPUT_END)
+  95   2                  {
+  96   3                      state_result = R_INCOMP;
+  97   3                      break;
+  98   3                  }
+  99   2      
+ 100   2                  ok = 1;
+ 101   2                  for (i = 0; i < PASSWORD_LEN; i++)
+ 102   2                  {
+ 103   3                      if (nixie_buffer[INPUT_START + i] != password[i])
+ 104   3                      {
+ 105   4                          ok = 0;
+ 106   4                          break;
+ 107   4                      }
+ 108   3                  }
+ 109   2      
+ 110   2                  if (ok)
+ 111   2                  {
+ 112   3                      err = 0;
+ 113   3                      unlock_counter = 15000;
+ 114   3                      Nixie_Clear();
+ 115   3                      State_Push(S_UNLOCK);
+ 116   3                      save_state();
+C51 COMPILER V9.60.7.0   STATES                                                            10/24/2026 21:07:29 PAGE 3   
+
+ 117   3                      fb_hint = FB_OK;
+ 118   3                  }
+ 119   2                  else
+ 120   2                  {
+ 121   3                      state_result = R_WRONG;
+ 122   3      
+ 123   3                      if (err < 5)
+ 124   3                      {
+ 125   4                          err++;
+ 126   4                      }
+ 127   3      
+ 128   3                      if (err == 3)
+ 129   3                      {
+ 130   4                          wait30_counter = 30000;
+ 131   4                          State_Push(S_WAIT30);
+ 132   4                          fb_hint = FB_LIMIT;
+ 133   4                      }
+ 134   3                      else if (err == 5)
+ 135   3                      {
+ 136   4                          wait60_counter = 60000;
+ 137   4                          State_Push(S_WAIT60);
+ 138   4                          fb_hint = FB_LIMIT;
+ 139   4                      }
+ 140   3      
+ 141   3                      Nixie_Clear();
+ 142   3                      save_state();
+ 143   3                  }
+ 144   2                  break;
+ 145   2              case E_CANCEL:
+ 146   2      
+ 147   2                  break;
+ 148   2              default:
+ 149   2      
+ 150   2                  break; 
+ 151   2          }
+ 152   1      }
+ 153          
+ 154          void Locked_State_Tick(void)
+ 155          {
+ 156   1          show_head(S_LOCKED);
+ 157   1      }
+ 158          
+ 159          void Unlock_State_Event(char event)
+ 160          {    
+ 161   1          state_result = R_DENIED;
+ 162   1      
+ 163   1          if(event<=9&&event>=0)
+ 164   1          {
+ 165   2              
+ 166   2              return;
+ 167   2          }
+ 168   1      
+ 169   1          switch (event)
+ 170   1          {
+ 171   2              case E_DELETE:
+ 172   2      
+ 173   2                  break;
+ 174   2              case E_CLEAR:
+ 175   2      
+ 176   2                  break;
+ 177   2              case E_MOD:
+ 178   2                  state_result = R_OK;
+C51 COMPILER V9.60.7.0   STATES                                                            10/24/2026 21:07:29 PAGE 4   
+
+ 179   2                  unlock_counter = 15000;
+ 180   2                  Nixie_Clear();
+ 181   2                  State_Push(S_NEW1);
+ 182   2                  break;
+ 183   2              case E_LOCK:
+ 184   2                  state_result = R_OK;
+ 185   2                  unlock_counter = 15000;
+ 186   2                  Nixie_Clear();
+ 187   2                  State_Pop();
+ 188   2                  break;
+ 189   2              case E_OK:
+ 190   2      
+ 191   2                  break;
+ 192   2              case E_CANCEL:
+ 193   2                  state_result = R_OK;
+ 194   2                  break;
+ 195   2              default:
+ 196   2      
+ 197   2                  break; 
+ 198   2          }    
+ 199   1      }
+ 200          
+ 201          void Unlock_State_Tick(void)
+ 202          {
+ 203   1          unsigned int sec;
+ 204   1      
+ 205   1          show_head(S_UNLOCK);
+ 206   1      
+ 207   1          if (unlock_counter > 0)
+ 208   1          {
+ 209   2              unlock_counter--;
+ 210   2      
+ 211   2              sec = (unlock_counter + 999) / 1000;
+ 212   2              nixie_buffer[6] = (unsigned char)(sec / 10);
+ 213   2              nixie_buffer[7] = (unsigned char)(sec % 10);
+ 214   2          }
+ 215   1          else
+ 216   1          {
+ 217   2              Nixie_Clear();
+ 218   2              State_Pop();
+ 219   2          }
+ 220   1      }
+ 221          
+ 222          void New1_State_Event(char event)
+ 223          {    
+ 224   1          unsigned char i;
+ 225   1          if(event<=9&&event>=0)
+ 226   1          {
+ 227   2              if (input_pos < INPUT_END)
+ 228   2              {
+ 229   3                  nixie_buffer[input_pos] = (unsigned char)event;
+ 230   3                  input_pos++;
+ 231   3                  unlock_counter = 15000;
+ 232   3              }
+ 233   2              else
+ 234   2              {
+ 235   3                  state_result = R_FULL;
+ 236   3              }
+ 237   2              return;
+ 238   2          }
+ 239   1      
+ 240   1          switch (event)
+C51 COMPILER V9.60.7.0   STATES                                                            10/24/2026 21:07:29 PAGE 5   
+
+ 241   1          {
+ 242   2              case E_DELETE:
+ 243   2                  if (input_pos > INPUT_START)
+ 244   2                  {
+ 245   3                      input_pos--;
+ 246   3                      nixie_buffer[input_pos] = NIXIE_DASH;
+ 247   3                      unlock_counter = 15000;
+ 248   3                  }
+ 249   2                  break;
+ 250   2              case E_CLEAR:
+ 251   2                  if (input_pos > INPUT_START)
+ 252   2                  {
+ 253   3                      unlock_counter = 15000;
+ 254   3                  }
+ 255   2                              Nixie_Clear();
+ 256   2                  break;
+ 257   2              case E_MOD:
+ 258   2                  state_result = R_DENIED;
+ 259   2                  break;
+ 260   2              case E_LOCK://LOCK -> UNLOCK -> NEW1    
+ 261   2                  Nixie_Clear();
+ 262   2                  State_Pop();//POP NEW1
+ 263   2                  State_Pop();//POP UNLOCK
+ 264   2                  break;
+ 265   2              case E_OK:
+ 266   2                  if (input_pos < INPUT_END)
+ 267   2                  {
+ 268   3                      state_result = R_INCOMP;
+ 269   3                      break;
+ 270   3                  }
+ 271   2                  for (i = 0; i < PASSWORD_LEN; i++)
+ 272   2                  {
+ 273   3                      new_password[i] = nixie_buffer[INPUT_START + i];
+ 274   3                  }
+ 275   2                  unlock_counter = 15000;
+ 276   2                  Nixie_Clear();
+ 277   2                  State_Push(S_NEW2);//PUSH NEW2
+ 278   2                  break;
+ 279   2              case E_CANCEL:
+ 280   2                  Nixie_Clear();
+ 281   2                  State_Pop();//POP NEW1
+ 282   2                  unlock_counter = 15000;
+ 283   2                  break;
+ 284   2              default:
+ 285   2      
+ 286   2                  break; 
+ 287   2          }
+ 288   1      }
+ 289          
+ 290          void New1_State_Tick(void)
+ 291          {
+ 292   1          show_head(S_NEW1);
+ 293   1      
+ 294   1          if (unlock_counter > 0)
+ 295   1          {
+ 296   2              unlock_counter--;
+ 297   2          }
+ 298   1          else
+ 299   1          {
+ 300   2              Nixie_Clear();
+ 301   2              State_Pop();//POP NEW1
+ 302   2              State_Pop();//POP UNLOCK
+C51 COMPILER V9.60.7.0   STATES                                                            10/24/2026 21:07:29 PAGE 6   
+
+ 303   2          }
+ 304   1      }
+ 305          
+ 306          void New2_State_Event(char event)
+ 307          {    
+ 308   1          unsigned char i;
+ 309   1          if(event<=9&&event>=0)
+ 310   1          {
+ 311   2              if (input_pos < INPUT_END)  
+ 312   2              {
+ 313   3                  nixie_buffer[input_pos] = (unsigned char)event;
+ 314   3                  input_pos++;
+ 315   3                  unlock_counter = 15000;
+ 316   3              }
+ 317   2              else
+ 318   2              {
+ 319   3                  state_result = R_FULL;
+ 320   3              }
+ 321   2              return;
+ 322   2          }
+ 323   1      
+ 324   1          switch (event)
+ 325   1          {
+ 326   2              case E_DELETE:
+ 327   2                  if (input_pos > INPUT_START)
+ 328   2                  {
+ 329   3                      input_pos--;
+ 330   3                      nixie_buffer[input_pos] = NIXIE_DASH;
+ 331   3                      unlock_counter = 15000;
+ 332   3                  }
+ 333   2                  break;
+ 334   2              case E_CLEAR:
+ 335   2                  if (input_pos > INPUT_START)
+ 336   2                  {
+ 337   3                      unlock_counter = 15000;
+ 338   3                  }
+ 339   2                  Nixie_Clear();
+ 340   2                  break;
+ 341   2              case E_MOD:
+ 342   2                  state_result = R_DENIED;
+ 343   2                  break;
+ 344   2              case E_LOCK://LOCK -> UNLOCK -> NEW1 -> NEW2
+ 345   2                  Nixie_Clear();
+ 346   2                  State_Pop();//POP NEW2
+ 347   2                  State_Pop();//POP NEW1
+ 348   2                  State_Pop();//POP UNLOCK
+ 349   2                  
+ 350   2                  break;
+ 351   2              case E_OK:
+ 352   2                  if (input_pos < INPUT_END)
+ 353   2                  {
+ 354   3                      state_result = R_INCOMP;
+ 355   3                      break;
+ 356   3                  }
+ 357   2                  for (i = 0; i < PASSWORD_LEN; i++)
+ 358   2                  {
+ 359   3                      if (nixie_buffer[INPUT_START + i] != new_password[i])
+ 360   3                      {
+ 361   4                          state_result = R_MISMATCH;
+ 362   4                          Nixie_Clear();
+ 363   4                          State_Pop();//POP NEW2
+ 364   4                          State_Pop();//POP NEW1
+C51 COMPILER V9.60.7.0   STATES                                                            10/24/2026 21:07:29 PAGE 7   
+
+ 365   4                          unlock_counter = 15000;
+ 366   4                          return;
+ 367   4                      }
+ 368   3                  }
+ 369   2                  if (Rom_SaveState(new_password, err, 0) == 0)
+ 370   2                  {
+ 371   3                      for (i = 0; i < PASSWORD_LEN; i++)
+ 372   3                      {
+ 373   4                          password[i] = new_password[i];
+ 374   4                      }
+ 375   3                      fb_hint = FB_OK;
+ 376   3                  }
+ 377   2                  else
+ 378   2                  {
+ 379   3                      state_result = R_STORAGE;
+ 380   3                  }
+ 381   2      
+ 382   2                  Nixie_Clear();
+ 383   2                  State_Pop();//POP NEW2
+ 384   2                  State_Pop();//POP NEW1
+ 385   2                  unlock_counter = 15000;
+ 386   2                  break;
+ 387   2              case E_CANCEL:
+ 388   2                  Nixie_Clear();
+ 389   2                  State_Pop();//POP NEW2
+ 390   2                  State_Pop();//POP NEW1
+ 391   2                  unlock_counter = 15000;
+ 392   2                  break;
+ 393   2              default:
+ 394   2      
+ 395   2                  break; 
+ 396   2          }
+ 397   1      }
+ 398          
+ 399          void New2_State_Tick(void)
+ 400          {
+ 401   1          show_head(S_NEW2);
+ 402   1      
+ 403   1          if (unlock_counter > 0)
+ 404   1          {
+ 405   2              unlock_counter--;
+ 406   2          }
+ 407   1          else
+ 408   1          {
+ 409   2              Nixie_Clear();
+ 410   2              State_Pop();//POP NEW2
+ 411   2              State_Pop();//POP NEW1
+ 412   2              State_Pop();//POP UNLOCK
+ 413   2          }
+ 414   1      }
+ 415          
+ 416          void Wait30_State_Event(char event)
+ 417          {    
+ 418   1          state_result = R_DENIED;
+ 419   1      
+ 420   1          if(event<=9&&event>=0)
+ 421   1          {
+ 422   2              
+ 423   2              return;
+ 424   2          }
+ 425   1      
+ 426   1          switch (event)
+C51 COMPILER V9.60.7.0   STATES                                                            10/24/2026 21:07:29 PAGE 8   
+
+ 427   1          {
+ 428   2              case E_DELETE:
+ 429   2      
+ 430   2                  break;
+ 431   2              case E_CLEAR:
+ 432   2      
+ 433   2                  break;
+ 434   2              case E_MOD:
+ 435   2      
+ 436   2                  break;
+ 437   2              case E_LOCK:
+ 438   2                  state_result = R_OK;
+ 439   2                  break;
+ 440   2              case E_OK:
+ 441   2      
+ 442   2                  break;
+ 443   2              case E_CANCEL:
+ 444   2      
+ 445   2                  break;
+ 446   2              default:
+ 447   2      
+ 448   2                  break; 
+ 449   2          }
+ 450   1      }
+ 451          
+ 452          void Wait30_State_Tick(void)
+ 453          {
+ 454   1          show_head(S_WAIT30);
+ 455   1      
+ 456   1          if(wait30_counter > 0)
+ 457   1          {
+ 458   2              wait30_counter--;
+ 459   2              show_wait_sec(wait30_counter);
+ 460   2          }
+ 461   1          else
+ 462   1          {//LOCK -> WAIT30
+ 463   2              Nixie_Clear();
+ 464   2              State_Pop();//POP WAIT30
+ 465   2              save_pending = 1;
+ 466   2          }
+ 467   1      }
+ 468          
+ 469          void Wait60_State_Event(char event)
+ 470          {    
+ 471   1          state_result = R_DENIED;
+ 472   1      
+ 473   1          if(event<=9&&event>=0)
+ 474   1          {
+ 475   2              
+ 476   2              return;
+ 477   2          }
+ 478   1      
+ 479   1          switch (event)
+ 480   1          {
+ 481   2              case E_DELETE:
+ 482   2      
+ 483   2                  break;
+ 484   2              case E_CLEAR:
+ 485   2      
+ 486   2                  break;
+ 487   2              case E_MOD:
+ 488   2      
+C51 COMPILER V9.60.7.0   STATES                                                            10/24/2026 21:07:29 PAGE 9   
+
+ 489   2                  break;
+ 490   2              case E_LOCK:
+ 491   2                  state_result = R_OK;
+ 492   2                  break;
+ 493   2              case E_OK:
+ 494   2      
+ 495   2                  break;
+ 496   2              case E_CANCEL:
+ 497   2      
+ 498   2                  break;
+ 499   2              default:
+ 500   2      
+ 501   2                  break; 
+ 502   2          }
+ 503   1      }
+ 504          
+ 505          void Wait60_State_Tick(void)
+ 506          {
+ 507   1          show_head(S_WAIT60);
+ 508   1      
+ 509   1          if(wait60_counter > 0)
+ 510   1          {
+ 511   2              wait60_counter--;
+ 512   2              show_wait_sec(wait60_counter);
+ 513   2          }
+ 514   1          else
+ 515   1          {//LOCK -> WAIT60
+ 516   2              Nixie_Clear();
+ 517   2              err = 0;
+ 518   2              State_Pop();//POP WAIT60
+ 519   2              save_pending = 1;
+ 520   2          }
+ 521   1      }
+ 522          
+ 523          /*
+ 524              if(event<=9&&event>=0)
+ 525              {
+ 526                  
+ 527                  return;
+ 528              }
+ 529          
+ 530              switch (event)
+ 531              {
+ 532                  case E_DELETE:
+ 533          
+ 534                      break;
+ 535                  case E_CLEAR:
+ 536          
+ 537                      break;
+ 538                  case E_MOD:
+ 539          
+ 540                      break;
+ 541                  case E_LOCK:
+ 542          
+ 543                      break;
+ 544                  case E_OK:
+ 545          
+ 546                      break;
+ 547                  case E_CANCEL:
+ 548          
+ 549                      break;
+ 550                  default:
+C51 COMPILER V9.60.7.0   STATES                                                            10/24/2026 21:07:29 PAGE 10  
+
+ 551          
+ 552                      break; 
+ 553              }
+ 554          */
+ 555          
+ 556          unsigned char State_LimitSec(void)
+ 557          {
+ 558   1              unsigned int v = 0;
+ 559   1              unsigned char st;
+ 560   1              bit ea;
+ 561   1      
+ 562   1              ea = EA;
+ 563   1              EA = 0;
+ 564   1      
+ 565   1              st = State_GetTop();
+ 566   1      
+ 567   1              if(st == S_WAIT30)      v = wait30_counter;
+ 568   1              else if(st == S_WAIT60) v = wait60_counter;
+ 569   1      
+ 570   1              EA = ea;
+ 571   1      
+ 572   1              return (unsigned char)((v + 999) / 1000);
+ 573   1      }
+ 574          
+ 575          unsigned char State_AutoSec(void)
+ 576          {
+ 577   1              unsigned int v = 0;
+ 578   1              unsigned char st;
+ 579   1              bit ea;
+ 580   1      
+ 581   1              ea = EA;
+ 582   1              EA = 0;
+ 583   1      
+ 584   1              st = State_GetTop();
+ 585   1      
+ 586   1              if(st == S_UNLOCK || st == S_NEW1 || st == S_NEW2) v = unlock_counter;
+ 587   1      
+ 588   1              EA = ea;
+ 589   1      
+ 590   1              return (unsigned char)((v + 999) / 1000);
+ 591   1      }
+ 592          
+ 593          void State_Poll(void)
+ 594          {
+ 595   1              if(save_pending)
+ 596   1              {
+ 597   2                      save_pending = 0;
+ 598   2                      save_state();
+ 599   2              }
+ 600   1      }
+ 601          
+ 602          void Isp_Start(void)
+ 603          {
+ 604   1              isp_counter = 500;
+ 605   1              Nixie_Clear();
+ 606   1              State_Push(S_ISP);
+ 607   1      }
+ 608          
+ 609          void Isp_State_Event(char event)
+ 610          {
+ 611   1              state_result = R_DENIED;
+ 612   1      }
+C51 COMPILER V9.60.7.0   STATES                                                            10/24/2026 21:07:29 PAGE 11  
+
+*** WARNING C280 IN LINE 609 OF States.c: 'event': unreferenced local variable
+ 613          
+ 614          void Isp_State_Tick(void)
+ 615          {
+ 616   1              show_head(6);
+ 617   1      
+ 618   1              if(isp_counter > 0)
+ 619   1              {
+ 620   2                      isp_counter--;
+ 621   2              }
+ 622   1      }
+ 623          
+ 624          void Isp_Poll(void)
+ 625          {
+ 626   1              if(State_GetTop() != S_ISP)
+ 627   1              {
+ 628   2                      return;
+ 629   2              }
+ 630   1      
+ 631   1              if(isp_counter > 0)
+ 632   1              {
+ 633   2                      return;
+ 634   2              }
+ 635   1      
+ 636   1              if(!Uart_TxIdle())
+*** WARNING C206 IN LINE 636 OF States.c: 'Uart_TxIdle': missing function-prototype
+ 637   1              {
+ 638   2                      return;
+ 639   2              }
+ 640   1      
+ 641   1              ISP_CONTR = 0x60;
+ 642   1      
+ 643   1              while(1);
+ 644   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1304    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     15       7
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =      1       3
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  2 WARNING(S),  0 ERROR(S)

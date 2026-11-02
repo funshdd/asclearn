@@ -1,0 +1,193 @@
+C51 COMPILER V9.60.7.0   UART                                                              10/24/2026 00:10:12 PAGE 1   
+
+
+C51 COMPILER V9.60.7.0, COMPILATION OF MODULE UART
+OBJECT MODULE PLACED IN ..\Objects\uart.obj
+COMPILER INVOKED BY: D:\IDE\Keil5\C51\BIN\C51.EXE ..\User\uart.c OPTIMIZE(8,SPEED) BROWSE DEFINE(D8_ALWAYS_ON=1) DEBUG O
+                    -BJECTEXTEND PRINT(..\Listings\uart.lst) OBJECT(..\Objects\uart.obj)
+
+line level    source
+
+   1          /**
+   2            ******************************************************************************
+   3            * @file    uart.c
+   4            * @brief   串口 9600/8N1：发送队列 + 接收环形缓冲
+   5            *
+   6            * 非阻塞设计：
+   7            *   - 接收：中断只把字节塞进环形缓冲，主循环按行取用；
+   8            *   - 发送：业务只把回复压入发送队列，中断逐字节送出；
+   9            *   - 因此“收一条命令 -> 回一条回复”的全过程没有一个 while 等待，
+  10            *     数码管扫描、按键采样、15 秒计时都不会被串口拖住。
+  11            *
+  12            * 缓冲放在片外 RAM（256B），把宝贵的 128B data 留给业务标量。
+  13            ******************************************************************************
+  14            */
+  15          
+  16          #include "config.h"
+  17          #include "uart.h"
+  18          
+  19          #define RX_SIZE     64          /* 一条命令最多 18 字节，64 足够抗突发 */
+  20          #define TX_SIZE     48          /* 最长回复约 31 字节 */
+  21          #define RX_NEXT(x)  (((x) + 1 >= RX_SIZE) ? 0 : (unsigned char)((x) + 1))
+  22          #define TX_NEXT(x)  (((x) + 1 >= TX_SIZE) ? 0 : (unsigned char)((x) + 1))
+  23          
+  24          static volatile unsigned char xdata rx_buf[RX_SIZE];
+  25          static volatile unsigned char rx_head = 0;
+  26          static volatile unsigned char rx_tail = 0;
+  27          
+  28          static volatile unsigned char xdata tx_buf[TX_SIZE];
+  29          static volatile unsigned char tx_head = 0;
+  30          static volatile unsigned char tx_tail = 0;
+  31          static volatile unsigned char tx_busy = 0;
+  32          
+  33          /**
+  34            * @brief  串口初始化：9600 8N1，波特率由 Timer1 模式 2 产生
+  35            */
+  36          void Uart_Init(void)
+  37          {
+  38   1          PCON &= 0x7F;           /* SMOD = 0 */
+  39   1          SCON  = 0x50;           /* 模式 1，8 位 UART，允许接收 */
+  40   1          TMOD &= 0x0F;
+  41   1          TMOD |= 0x20;           /* T1：模式 2，8 位自动重装 */
+  42   1          TH1   = 0xFD;           /* 11.0592MHz、SMOD=0 时为 9600bps */
+  43   1          TL1   = 0xFD;
+  44   1          TR1   = 1;
+  45   1      
+  46   1          RI = 0;
+  47   1          TI = 0;
+  48   1          ES = 1;
+  49   1      }
+  50          
+  51          /**
+  52            * @brief  从接收环形缓冲取一个字节
+  53            * @retval 1 表示取到，0 表示暂无数据
+  54            */
+C51 COMPILER V9.60.7.0   UART                                                              10/24/2026 00:10:12 PAGE 2   
+
+  55          unsigned char Uart_Read(unsigned char *ch)
+  56          {
+  57   1          if (rx_tail == rx_head) return 0;
+  58   1      
+  59   1          *ch = rx_buf[rx_tail];
+  60   1          rx_tail = RX_NEXT(rx_tail);
+  61   1          return 1;
+  62   1      }
+  63          
+  64          /**
+  65            * @brief  把数据压入发送队列并启动发送（立即返回，不等待）
+  66            */
+  67          void Uart_Send(const unsigned char *buf, unsigned char len)
+  68          {
+  69   1          unsigned char i;
+  70   1          unsigned char nh;
+  71   1      
+  72   1          for (i = 0; i < len; i++)
+  73   1          {
+  74   2              nh = TX_NEXT(tx_head);
+  75   2              if (nh == tx_tail) break;           /* 队列满：丢弃（正常不会发生） */
+  76   2              tx_buf[tx_head] = buf[i];
+  77   2              tx_head = nh;
+  78   2          }
+  79   1      
+  80   1          /* 启动发送的瞬间必须与发送中断互斥，否则可能重复写 SBUF */
+  81   1          ES = 0;
+  82   1          if (!tx_busy)
+  83   1          {
+  84   2              tx_busy = 1;
+  85   2              SBUF = tx_buf[tx_tail];
+  86   2              tx_tail = TX_NEXT(tx_tail);
+  87   2          }
+  88   1          ES = 1;
+  89   1      }
+  90          
+  91          /**
+  92            * @brief  发送 code 区常量字符串
+  93            */
+  94          void Uart_SendStr(const char code *s)
+  95          {
+  96   1          unsigned char nh;
+  97   1      
+  98   1          for (;;)
+  99   1          {
+ 100   2              unsigned char c = (unsigned char)*s;
+ 101   2              if (c == 0) break;
+ 102   2              s++;
+ 103   2      
+ 104   2              nh = TX_NEXT(tx_head);
+ 105   2              if (nh == tx_tail) break;
+ 106   2              tx_buf[tx_head] = c;
+ 107   2              tx_head = nh;
+ 108   2          }
+ 109   1      
+ 110   1          ES = 0;
+ 111   1          if (!tx_busy)
+ 112   1          {
+ 113   2              tx_busy = 1;
+ 114   2              SBUF = tx_buf[tx_tail];
+ 115   2              tx_tail = TX_NEXT(tx_tail);
+ 116   2          }
+C51 COMPILER V9.60.7.0   UART                                                              10/24/2026 00:10:12 PAGE 3   
+
+ 117   1          ES = 1;
+ 118   1      }
+ 119          
+ 120          /**
+ 121            * @brief  发送是否彻底完成（队列空且当前字节已送出）
+ 122            */
+ 123          unsigned char Uart_TxIdle(void)
+ 124          {
+ 125   1          if (tx_busy) return 0;
+ 126   1          if (tx_head != tx_tail) return 0;
+ 127   1          return 1;
+ 128   1      }
+ 129          
+ 130          /**
+ 131            * @brief  串口中断：收字节入环形缓冲，发字节出队列
+ 132            */
+ 133          void Uart_ISR(void) interrupt 4
+ 134          {
+ 135   1          unsigned char c;
+ 136   1          unsigned char nh;
+ 137   1      
+ 138   1          if (RI)
+ 139   1          {
+ 140   2              RI = 0;
+ 141   2              c = SBUF;
+ 142   2              nh = RX_NEXT(rx_head);
+ 143   2              if (nh != rx_tail)                  /* 缓冲满则丢弃，不会死等 */
+ 144   2              {
+ 145   3                  rx_buf[rx_head] = c;
+ 146   3                  rx_head = nh;
+ 147   3              }
+ 148   2          }
+ 149   1      
+ 150   1          if (TI)
+ 151   1          {
+ 152   2              TI = 0;
+ 153   2              if (tx_tail != tx_head)
+ 154   2              {
+ 155   3                  SBUF = tx_buf[tx_tail];
+ 156   3                  tx_tail = TX_NEXT(tx_tail);
+ 157   3              }
+ 158   2              else
+ 159   2              {
+ 160   3                  tx_busy = 0;
+ 161   3              }
+ 162   2          }
+ 163   1      }
+ 164          
+ 165          /******************************* END OF FILE *********************************/
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    524    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =    112    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =      5       5
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
